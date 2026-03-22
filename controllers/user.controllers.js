@@ -116,9 +116,7 @@ export const login = async (req, res) => {
 
     const tokenData = { userId: user._id, role: user.role };
 
-    const token = jwt.sign(tokenData, process.env.SECRET_KEY, {
-      expiresIn: "1d",
-    });
+    const token = jwt.sign(tokenData, process.env.SECRET_KEY);
 
     const userResponse = {
       _id: user._id,
@@ -134,7 +132,6 @@ export const login = async (req, res) => {
     return res
       .status(200)
       .cookie("token", token, {
-        maxAge: 24 * 60 * 60 * 1000, // 1 day
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "None",
