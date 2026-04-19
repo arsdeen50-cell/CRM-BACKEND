@@ -18,9 +18,9 @@ const sendMail = (to, subject, htmlTemplate, cc = [], bcc = [], attachments = []
         pass: process.env.EMAIL_PASSWORD,
       },
       // development code
-//       tls: {
-//   rejectUnauthorized: false,
-// },
+      tls: {
+  rejectUnauthorized: false,
+},
     });
 
     const mailOptions = {

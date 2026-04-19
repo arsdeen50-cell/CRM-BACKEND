@@ -8,6 +8,8 @@ import { generateAndUploadPDF } from "../templatesOnBoarding/generateAndUploadPD
 import { onboardingApprovedTemplate } from "../templatesOnBoarding/onboardingApprovedTemplate.js";
 import { candidateFormLinkTemplate } from "../templatesOnBoarding/candidateFormLinkTemplate.js";
 import { documentsSubmittedTemplate } from "../templatesOnBoarding/documentsSubmittedTemplate.js";
+import { User } from "../models/user.model.js";
+import bcrypt from "bcryptjs";
 
 /* ---------------------- Create GoOnBoarding ---------------------- */
 export const createGoOnBoarding = async (req, res) => {
@@ -84,14 +86,17 @@ export const createGoOnBoarding = async (req, res) => {
 
     // Check if candidate with email already exists
     const existingCandidate = await GoOnBoarding.findOne({
-      email: onboardingData.email,
-    });
-    // if (existingCandidate) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Candidate with this email already exists",
-    //   });
-    // }
+  candidateName: onboardingData.candidateName,
+  email: onboardingData.email,
+  mobileNo: onboardingData.mobileNo,
+});
+
+    if (existingCandidate) {
+      return res.status(400).json({
+        success: false,
+        message: "Candidate with this data already exists",
+      });
+    }
 
     const newOnboarding = new GoOnBoarding(onboardingData);
     await newOnboarding.save();
@@ -404,6 +409,59 @@ export const updateGoOnBoarding = async (req, res) => {
        // === When status changes to "Approved" ===
     if (prevStatus !== "Approved" && newStatus === "Approved") {
         try {
+
+            // Check if user already exists with this email
+        const existingUser = await User.findOne({ email: updatedOnboarding.email });
+        
+        let userCreated = false;
+        let empId = null;
+        let generatedPassword = null;
+        
+        if (existingUser) {
+            console.log(`User already exists with email: ${updatedOnboarding.email}`);
+            // Don't create user, don't send email
+            userCreated = false;
+            
+            // Return error response with specific message
+            return res.status(400).json({
+                success: false,
+                message: `Cannot approve: User with email ${updatedOnboarding.email} already exists in the system. Please use a different email address.`,
+                error: "DUPLICATE_EMAIL",
+                email: updatedOnboarding.email
+            });
+        } else {
+            // Generate empId and password only if user doesn't exist
+            const userCount = await User.countDocuments();
+            empId = `EMP-${String(userCount + 1).padStart(3, "0")}`;
+            
+            // Generate password: TOM@ + empId (e.g., TOM@EMP-001)
+            generatedPassword = `TOM@${empId}`;
+            const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+            
+            // Create user data
+            const userData = {
+                fullname: updatedOnboarding.candidateName,
+                email: updatedOnboarding.email,
+                phoneNumber: updatedOnboarding.mobileNo,
+                password: hashedPassword,
+                empId: empId,
+            };
+            
+            // Handle profile photo if exists
+            if (updatedOnboarding.uploadProfile && updatedOnboarding.uploadProfile.fileUrl) {
+                userData.profile = {
+                    profilePhoto: updatedOnboarding.uploadProfile.fileUrl,
+                };
+            }
+            
+            // Create user in database
+            await User.create(userData);
+            userCreated = true;
+            
+            console.log(`User created successfully with email: ${updatedOnboarding.email}, empId: ${empId}, password: ${generatedPassword}`);
+          }
+
+
           const pdfData = await generateAndUploadPDF(updatedOnboarding);
   
           await GoOnBoarding.findByIdAndUpdate(id, {
@@ -421,7 +479,12 @@ export const updateGoOnBoarding = async (req, res) => {
             },
           ];
   
-          const htmlContent = onboardingApprovedTemplate(updatedOnboarding.candidateName, updatedOnboarding.positionType);
+          const htmlContent = onboardingApprovedTemplate(updatedOnboarding.candidateName, 
+            updatedOnboarding.positionType,
+            updatedOnboarding.email,
+            generatedPassword,
+            empId
+          );
   
           const to = updatedOnboarding.email;
           const cc = ["arsdeen50@gmail.com"];
