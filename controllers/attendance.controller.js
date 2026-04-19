@@ -174,3 +174,69 @@ export const deleteAttendance = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
+
+export const startBreak = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attendance = await Attendance.findOne({
+      userId: req.id,
+      punchIn: { $gte: today },
+      punchOut: { $exists: false },
+    });
+
+    if (!attendance) {
+      return res.status(400).json({ msg: "No active session" });
+    }
+
+    // push new break
+    attendance.breaks.push({
+      breakStart: new Date(),
+      breakEnd: null,
+    });
+
+    await attendance.save();
+
+    res.json(attendance);
+  } catch (err) {
+    res.status(500).send("Server error");
+  }
+};
+
+export const endBreak = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attendance = await Attendance.findOne({
+      userId: req.id,
+      punchIn: { $gte: today },
+      punchOut: { $exists: false },
+    });
+
+    if (!attendance) {
+      return res.status(400).json({ msg: "No active session" });
+    }
+
+    const lastBreak = attendance.breaks[attendance.breaks.length - 1];
+
+    if (!lastBreak || lastBreak.breakEnd) {
+      return res.status(400).json({ msg: "No active break" });
+    }
+
+    lastBreak.breakEnd = new Date();
+
+    // calculate break duration
+    const diff =
+      (new Date(lastBreak.breakEnd) - new Date(lastBreak.breakStart)) / 1000;
+
+    attendance.totalBreakTime += diff;
+
+    await attendance.save();
+
+    res.json(attendance);
+  } catch (err) {
+    res.status(500).send("Server error");
+  }
+};

@@ -12,5 +12,16 @@ const attendanceSchema = new mongoose.Schema({
   punchOut: {
     type: Date,
   },
+    breaks: [
+    {
+      breakStart: Date,
+      breakEnd: Date,
+    },
+  ],
+
+  totalBreakTime: {
+    type: Number, 
+    default: 0,
+  },
 }, { timestamps: true });
 export const Attendance = mongoose.model("Attendance", attendanceSchema);
