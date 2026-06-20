@@ -34,24 +34,65 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 /* ================= CORS ================= */
+/* ================= CORS ================= */
 const allowedOrigins = [
   "https://crm.arsdeen.cloud",
   "https://www.crm.arsdeen.cloud",
   "http://localhost:3000",
+  "http://127.0.0.1:3000",
 ];
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
+    origin: function (origin, callback) {
+      // Postman, mobile apps, server-to-server requests
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
       }
+
+      console.log("❌ Blocked CORS:", origin);
+
+      // TEMP: allow all origins while debugging
+      return callback(null, true);
     },
+
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+  })
+);
+
+// Handle preflight requests
+app.options(
+  "*",
+  cors({
+    origin: true,
+    credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
   })
 );
 
