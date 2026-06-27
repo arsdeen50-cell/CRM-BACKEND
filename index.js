@@ -14,6 +14,7 @@ import taskRoute from "./routes/task.routes.js";
 import leaveRoute from "./routes/leave.route.js";
 import leadSourceRoute from "./routes/leadSource.route.js";
 import goOnBoardingRoute from "./routes/goOnBoarding.route.js";
+import leadClientRoute from "./routes/leadClient.route.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -129,7 +130,7 @@ app.use("/api/v1/task", taskRoute);
 app.use("/api/v1/leave", leaveRoute);
 app.use("/api/v1/leadsource", leadSourceRoute);
 app.use("/api/v1/onboarding", goOnBoardingRoute);
-
+app.use("/api/v1/leadclient", leadClientRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -140,7 +141,7 @@ app.use((err, req, res, next) => {
 });
 
 /* ================= START SERVER ================= */
-const PORT = process.env.PORT || 8001;
+const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, async () => {
   await connectDB();

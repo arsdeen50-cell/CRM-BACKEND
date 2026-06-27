@@ -85,6 +85,14 @@ const leadSourceSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: Date.now },
       },
     ],
+    clientName: {
+  type: String,
+  trim: true,
+},
+clientId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "LeadClient",
+},
   },
   { timestamps: true }
 );

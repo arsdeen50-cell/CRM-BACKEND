@@ -7,6 +7,7 @@ import {
   logLeadActivity,
   deleteLeadSource,
   deleteLeadDocument,
+  getLeadActivityLogs
 } from "../controllers/leadSource.controller.js";
 import { multipleUpload } from "../middlewares/multer.js";
 
@@ -19,5 +20,6 @@ router.patch("/:id/stage", updateLeadStage);
 router.post("/:id/activity", logLeadActivity); 
 router.delete("/:id", deleteLeadSource);
 router.delete("/:id/documents/:docIndex", deleteLeadDocument);
+router.get("/:id/activity", getLeadActivityLogs); 
 
 export default router;
