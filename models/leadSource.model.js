@@ -33,6 +33,17 @@ const leadSourceSchema = new mongoose.Schema(
   {
     series: { type: String },
 
+    // Client reference
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LeadClient",
+    },
+    clientName: {
+      type: String,
+      trim: true,
+    },
+
+    // Service and lead details
     serviceType: {
       type: [String],
       required: true,
@@ -46,6 +57,7 @@ const leadSourceSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Pipeline
     pipelineStage: {
       type: String,
       enum: PIPELINE_STAGES,
@@ -53,6 +65,7 @@ const leadSourceSchema = new mongoose.Schema(
     },
     stageHistory: [stageHistorySchema],
 
+    // Deal details
     dealValue: {
       type: Number,
       required: true,
@@ -67,10 +80,13 @@ const leadSourceSchema = new mongoose.Schema(
 
     nextFollowUpDate: { type: Date },
 
+    // Activity
     activityLog: [activityLogSchema],
 
+    // Lost reason
     lostReason: { type: String },
 
+    // Assignment
     projectAccountHandledBy: { type: String },
     teamAssigned: { type: String },
     teamMember: { type: String },
@@ -78,6 +94,8 @@ const leadSourceSchema = new mongoose.Schema(
     proposalSent: { type: String },
     convertedToProject: { type: String },
     createdBy: { type: String },
+    
+    // Documents
     documents: [
       {
         fileName: { type: String },
@@ -85,18 +103,11 @@ const leadSourceSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: Date.now },
       },
     ],
-    clientName: {
-  type: String,
-  trim: true,
-},
-clientId: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "LeadClient",
-},
   },
   { timestamps: true }
 );
 
+// Auto-generate series number
 leadSourceSchema.pre("save", async function (next) {
   if (!this.series) {
     const year = new Date().getFullYear();
@@ -116,6 +127,12 @@ leadSourceSchema.pre("save", async function (next) {
     ];
   }
 
+  next();
+});
+
+// Middleware to populate clientId automatically on find queries
+leadSourceSchema.pre(/^find/, function(next) {
+  this.populate('clientId');
   next();
 });
 

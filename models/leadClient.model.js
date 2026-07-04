@@ -1,4 +1,3 @@
-// models/leadClient.model.js
 import mongoose from "mongoose";
 
 const leadClientSchema = new mongoose.Schema(
@@ -9,12 +8,13 @@ const leadClientSchema = new mongoose.Schema(
     },
     leadInformation: {
       type: String,
-      required: true,
+      default: "",
     },
     brandName: {
       type: String,
       required: true,
       trim: true,
+      unique: true,
     },
     contactPerson: {
       type: String,
@@ -26,6 +26,7 @@ const leadClientSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
+      unique: true,
     },
     phone: {
       type: String,
@@ -35,22 +36,27 @@ const leadClientSchema = new mongoose.Schema(
     role: {
       type: String,
       trim: true,
+      default: "",
     },
     industry: {
       type: String,
       trim: true,
+      default: "",
     },
     location: {
       type: String,
       trim: true,
+      default: "",
     },
     instagramLink: {
       type: String,
       trim: true,
+      default: "",
     },
     websiteLink: {
       type: String,
       trim: true,
+      default: "",
     },
     createdBy: {
       type: String,
@@ -79,7 +85,9 @@ leadClientSchema.pre("save", async function (next) {
   next();
 });
 
-// Prevent duplicate brand names
-leadClientSchema.index({ brandName: 1 }, { unique: true });
+// Indexes for better performance
+leadClientSchema.index({ brandName: 1 });
+leadClientSchema.index({ email: 1 });
+leadClientSchema.index({ isDeleted: 1 });
 
 export const LeadClient = mongoose.model("LeadClient", leadClientSchema);
