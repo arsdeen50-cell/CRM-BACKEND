@@ -4,7 +4,6 @@ const leadClientSchema = new mongoose.Schema(
   {
     leadId: {
       type: String,
-      unique: true,
     },
     leadInformation: {
       type: String,
@@ -14,7 +13,6 @@ const leadClientSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
     },
     contactPerson: {
       type: String,
@@ -26,7 +24,6 @@ const leadClientSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
-      unique: true,
     },
     phone: {
       type: String,
