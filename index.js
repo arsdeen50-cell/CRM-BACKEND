@@ -15,6 +15,7 @@ import leaveRoute from "./routes/leave.route.js";
 import leadSourceRoute from "./routes/leadSource.route.js";
 import goOnBoardingRoute from "./routes/goOnBoarding.route.js";
 import leadClientRoute from "./routes/leadClient.route.js";
+import designationRoute from "./routes/designation.route.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -131,6 +132,7 @@ app.use("/api/v1/leave", leaveRoute);
 app.use("/api/v1/leadsource", leadSourceRoute);
 app.use("/api/v1/onboarding", goOnBoardingRoute);
 app.use("/api/v1/leadclient", leadClientRoute);
+app.use("/api/v1/designation", designationRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);

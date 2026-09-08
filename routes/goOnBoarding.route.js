@@ -7,7 +7,8 @@ import {
   getGoOnBoardingById,
   getOnboardingStats,
   deleteOnboardingDocument,
-  previewOfferLetter
+  previewOfferLetter,
+  createOnboardingFromSignup
 } from "../controllers/goOnBoarding.controller.js";
 import { multipleUpload } from "../middlewares/multer.js";
 
@@ -20,6 +21,7 @@ router.get("/stats", getOnboardingStats);
 router.get("/:id", getGoOnBoardingById);
 router.put("/:id", multipleUpload, updateGoOnBoarding);
 router.delete("/:id", deleteGoOnBoarding);
+router.post("/from-signup", multipleUpload, createOnboardingFromSignup);
 
 router.delete("/:id/documents/:docType/:docIndex?", deleteOnboardingDocument);
 router.get("/:id/preview-offer", previewOfferLetter);

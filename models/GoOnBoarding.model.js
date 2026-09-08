@@ -35,7 +35,7 @@ const goOnBoardingSchema = new mongoose.Schema(
     // Professional Information
     designation: {
       type: String,
-      required: true,
+      // required: true,
     },
     doj: {
       type: Date,
@@ -137,6 +137,29 @@ const goOnBoardingSchema = new mongoose.Schema(
       default: false
     },
     candidateFormSubmittedAt: Date,
+   signupCredentials: {
+      fullname: String,
+      email: String,
+      phoneNumber: String,
+      password: String,
+      file: {
+        fileName: String,
+        fileUrl: String,
+      },
+      role: {
+        type: String,
+        default: 'employee',
+      },
+      createdAt: Date,
+    },
+    
+    // User account created flag
+    userAccountCreated: {
+      type: Boolean,
+      default: false,
+    },
+    userAccountCreatedAt: Date,
+    
   },
   { timestamps: true }
 );

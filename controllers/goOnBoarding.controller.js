@@ -84,18 +84,43 @@ export const createGoOnBoarding = async (req, res) => {
       });
     }
 
-    // Check if candidate with email already exists
+    // Check if candidate already exists
     const existingCandidate = await GoOnBoarding.findOne({
-  candidateName: onboardingData.candidateName,
-  email: onboardingData.email,
-  mobileNo: onboardingData.mobileNo,
-});
+      $or: [
+        { email: onboardingData.email },
+
+      ]
+    });
 
     if (existingCandidate) {
       return res.status(400).json({
         success: false,
-        message: "Candidate with this data already exists",
+        message: "Candidate with this email or mobile number already exists",
       });
+    }
+
+    // Handle signupCredentials from formData
+    if (onboardingData.signupCredentials) {
+      try {
+        // If signupCredentials is a string (JSON), parse it
+        if (typeof onboardingData.signupCredentials === 'string') {
+          onboardingData.signupCredentials = JSON.parse(onboardingData.signupCredentials);
+        }
+      } catch (e) {
+        console.error("Error parsing signupCredentials:", e);
+      }
+    } else {
+      // Fallback: check for individual signup fields
+      if (onboardingData.signupFullname) {
+        onboardingData.signupCredentials = {
+          fullname: onboardingData.signupFullname,
+          email: onboardingData.signupEmail || onboardingData.email,
+          phoneNumber: onboardingData.signupPhone || onboardingData.mobileNo,
+          password: onboardingData.signupPassword || "Temp@123",
+          role: 'employee',
+          createdAt: new Date(),
+        };
+      }
     }
 
     const newOnboarding = new GoOnBoarding(onboardingData);
@@ -709,6 +734,120 @@ export const previewOfferLetter = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error while generating offer letter preview",
+    });
+  }
+};
+// controllers/goOnBoarding.controller.js - Fixed version
+
+/* ---------------------- Create Onboarding From Signup ---------------------- */
+export const createOnboardingFromSignup = async (req, res) => {
+  try {
+    const { candidateName, email, mobileNo, signupPassword, doj, ...rest } = req.body;
+
+    console.log("Received signup data:", { candidateName, email, mobileNo });
+
+    // Validate required fields
+    if (!candidateName || !email || !mobileNo) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name, email, and phone number are required",
+      });
+    }
+
+    // Check if candidate already exists with same email or mobile
+    const existingCandidate = await GoOnBoarding.findOne({
+      $or: [
+        { email: email },
+      ]
+    });
+
+    if (existingCandidate) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email or phone number already exists",
+      });
+    }
+
+    // Handle profile image upload
+    let uploadProfile = null;
+    if (req.files && req.files.length > 0) {
+      const profileFile = req.files.find((f) => f.fieldname === "uploadProfile");
+      if (profileFile) {
+        try {
+          const fileuri = getDataUri(profileFile);
+          const cloudResponse = await cloudinary.uploader.upload(fileuri.content, {
+            resource_type: "auto",
+            folder: "onboarding_documents",
+          });
+          uploadProfile = {
+            fileName: profileFile.originalname,
+            fileUrl: cloudResponse.secure_url,
+          };
+        } catch (uploadError) {
+          console.error("Profile upload error:", uploadError);
+          // Continue without profile if upload fails
+        }
+      }
+    }
+
+    // Create onboarding with signup data
+    const onboardingData = {
+      candidateName: candidateName.trim(),
+      email: email.trim().toLowerCase(),
+      mobileNo: mobileNo.trim(),
+      doj: doj || new Date().toISOString().split('T')[0],
+      uploadProfile: uploadProfile,
+      signupCredentials: {
+        fullname: candidateName.trim(),
+        email: email.trim().toLowerCase(),
+        phoneNumber: mobileNo.trim(),
+        password: signupPassword, // Store for later use
+        file: uploadProfile,
+        role: 'employee',
+        createdAt: new Date(),
+      },
+      candidateStatus: 'Pending',
+      candidateFormSubmitted: false,
+    };
+
+    console.log("Creating onboarding with data:", onboardingData);
+
+    const newOnboarding = new GoOnBoarding(onboardingData);
+    await newOnboarding.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Signup completed! Please complete your onboarding details.",
+      onboarding: {
+        _id: newOnboarding._id,
+        candidateName: newOnboarding.candidateName,
+        email: newOnboarding.email,
+      },
+    });
+  } catch (err) {
+    console.error("Error creating onboarding from signup:", err);
+    
+    // Handle validation errors
+    if (err.name === "ValidationError") {
+      const errors = Object.values(err.errors).map((error) => error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: errors,
+      });
+    }
+
+    // Handle duplicate key error
+    if (err.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email or phone number already exists",
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: err.message || "Server error while creating onboarding from signup",
     });
   }
 };

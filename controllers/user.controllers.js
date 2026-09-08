@@ -6,10 +6,13 @@ import cloudinary from "../utils/cloudinary.js";
 import sendMail from "../middlewares/mail.js";
 import { otpTemplate } from "../emailTemplates/otpTemplate.js";
 
+// controllers/user.controllers.js - Update register function
+
 export const register = async (req, res) => {
   try {
-    const { fullname, email, phoneNumber, password } = req.body;
-    if ((!fullname, !email, !phoneNumber, !password)) {
+    const { fullname, email, phoneNumber, password, designation } = req.body;
+    
+    if (!fullname || !email || !phoneNumber || !password) {
       return res.status(400).json({
         message: "All fields are required",
         success: false,
@@ -20,7 +23,7 @@ export const register = async (req, res) => {
 
     if (user) {
       return res.status(400).json({
-        message: "User already exist with its email.",
+        message: "User already exist with this email.",
         success: false,
       });
     }
@@ -30,18 +33,15 @@ export const register = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Initialize user data without profile photo
+    // Initialize user data
     const userData = {
       fullname,
       email,
       phoneNumber,
       password: hashedPassword,
       empId,
+      designation: designation || "", // Save designation if provided
     };
-
-    // const file = req.file;
-    // const fileuri = getDataUri(file);
-    // const cloudResponse = await cloudinary.uploader.upload(fileuri.content);
 
     // Only process profile photo if file exists
     if (req.file) {
@@ -54,19 +54,8 @@ export const register = async (req, res) => {
 
     await User.create(userData);
 
-    // await User.create({
-    //   fullname,
-    //   email,
-    //   phoneNumber,
-    //   password: hashedPassword,
-    //   empId,
-    //   profile:{
-    //     profilePhoto: cloudResponse.secure_url,
-    //   }
-    // });
-
     return res.status(200).json({
-      message: "Account created succesfully.",
+      message: "Account created successfully.",
       success: true,
     });
   } catch (error) {
@@ -77,7 +66,6 @@ export const register = async (req, res) => {
     });
   }
 };
-
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
