@@ -19,16 +19,17 @@ const leadClientSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // Optional: many prospects (walk-in shops, Instagram-only brands) publish only one contact channel
     email: {
       type: String,
-      required: true,
       trim: true,
       lowercase: true,
+      default: "",
     },
     phone: {
       type: String,
-      required: true,
       trim: true,
+      default: "",
     },
     role: {
       type: String,

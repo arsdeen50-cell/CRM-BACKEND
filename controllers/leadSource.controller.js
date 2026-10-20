@@ -13,14 +13,14 @@ export const createLeadSource = async (req, res) => {
     let clientId = leadData.clientId;
     
     // If no clientId but we have client fields, create a new client
-    if (!clientId && leadData.brandName && leadData.contactPerson && leadData.email && leadData.phone) {
+    if (!clientId && leadData.brandName && leadData.contactPerson) {
       try {
         const clientData = {
           leadInformation: leadData.leadInformation || "",
           brandName: leadData.brandName,
           contactPerson: leadData.contactPerson,
-          email: leadData.email,
-          phone: leadData.phone,
+          email: leadData.email || "",
+          phone: leadData.phone || "",
           role: leadData.role || "",
           industry: leadData.industry || "",
           location: leadData.location || "",
@@ -265,8 +265,7 @@ export const updateLeadStage = async (req, res) => {
         const email = req.body.email || lead.email || "";
         const phone = req.body.phone || lead.phone || "";
         
-        // Validate required fields
-        if (!brandName || !contactPerson || !email || !phone) {
+        if (!brandName || !contactPerson) {
           console.warn("Missing client data, using default values");
         }
 
@@ -274,8 +273,8 @@ export const updateLeadStage = async (req, res) => {
           leadInformation: req.body.leadInformation || lead.leadInformation || "",
           brandName: brandName,
           contactPerson: contactPerson,
-          email: email || `client_${Date.now()}@temp.com`, // Fallback email
-          phone: phone || "0000000000", // Fallback phone
+          email, // optional - no fake fallback values
+          phone,
           role: req.body.role || lead.role || "",
           industry: req.body.industry || lead.industry || "",
           location: req.body.location || lead.location || "",
