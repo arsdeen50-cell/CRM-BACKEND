@@ -56,6 +56,19 @@ const leadClientSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    // Prospect research, as structured fields so leads can be sorted and filtered by it
+    research: {
+      score: { type: Number, min: 0, max: 100 },
+      tier: { type: String, enum: ["P1", "P2", "P3", "Hold", ""], default: "" },
+      gap: { type: String, default: "" },
+      signal: { type: String, default: "" },
+      angle: { type: String, default: "" },
+      instagram: { type: String, default: "" },
+      bestChannel: { type: String, default: "" },
+      sourceUrls: { type: [String], default: [] },
+      researchedAt: { type: Date },
+      externalId: { type: String, default: "" },
+    },
     createdBy: {
       type: String,
       required: true,
@@ -87,5 +100,16 @@ leadClientSchema.pre("save", async function (next) {
 leadClientSchema.index({ brandName: 1 });
 leadClientSchema.index({ email: 1 });
 leadClientSchema.index({ isDeleted: 1 });
+leadClientSchema.index({ "research.tier": 1, "research.score": -1 });
+
+// True when the stored email/phone is a placeholder written by an import, or empty.
+leadClientSchema.virtual("hasRealEmail").get(function () {
+  return !!this.email && !/placeholder\.invalid$/i.test(this.email);
+});
+leadClientSchema.virtual("hasRealPhone").get(function () {
+  return !!this.phone && !/^not public$/i.test(this.phone.trim());
+});
+leadClientSchema.set("toJSON", { virtuals: true });
+leadClientSchema.set("toObject", { virtuals: true });
 
 export const LeadClient = mongoose.model("LeadClient", leadClientSchema);
