@@ -19,9 +19,22 @@ const stageHistorySchema = new mongoose.Schema(
   { _id: false }
 );
 
+export const ACTIVITY_TYPES = ["Call", "Email", "WhatsApp", "Visit", "Meeting", "Instagram DM", "Note"];
+export const ACTIVITY_OUTCOMES = [
+  "Sent",
+  "Replied",
+  "No answer",
+  "Left message",
+  "Meeting booked",
+  "Interested",
+  "Not interested",
+  "Wrong contact",
+];
+
 const activityLogSchema = new mongoose.Schema(
   {
-    type: { type: String, enum: ["Call", "Email", "Meeting", "Note"], default: "Note" },
+    type: { type: String, enum: ACTIVITY_TYPES, default: "Note" },
+    outcome: { type: String, enum: [...ACTIVITY_OUTCOMES, ""], default: "" },
     note: { type: String },
     loggedBy: { type: String },
     loggedAt: { type: Date, default: Date.now },
@@ -79,6 +92,9 @@ const leadSourceSchema = new mongoose.Schema(
     expectedCloseDate: { type: Date },
 
     nextFollowUpDate: { type: Date },
+    lastContactedAt: { type: Date },
+    lastOutcome: { type: String, default: "" },
+    projectId: { type: mongoose.Schema.Types.ObjectId, ref: "Project" },
 
     // Activity
     activityLog: [activityLogSchema],

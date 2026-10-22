@@ -16,6 +16,11 @@ import leadSourceRoute from "./routes/leadSource.route.js";
 import goOnBoardingRoute from "./routes/goOnBoarding.route.js";
 import leadClientRoute from "./routes/leadClient.route.js";
 import designationRoute from "./routes/designation.route.js";
+import proposalRoute from "./routes/proposal.route.js";
+import projectRoute from "./routes/project.route.js";
+import templateRoute from "./routes/template.route.js";
+import auditRoute from "./routes/audit.route.js";
+import { startFollowUpDigest } from "./utils/followupDigest.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -133,6 +138,10 @@ app.use("/api/v1/leadsource", leadSourceRoute);
 app.use("/api/v1/onboarding", goOnBoardingRoute);
 app.use("/api/v1/leadclient", leadClientRoute);
 app.use("/api/v1/designation", designationRoute);
+app.use("/api/v1/proposal", proposalRoute);
+app.use("/api/v1/project", projectRoute);
+app.use("/api/v1/template", templateRoute);
+app.use("/api/v1/audit", auditRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -147,5 +156,6 @@ const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, async () => {
   await connectDB();
+  startFollowUpDigest();
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
