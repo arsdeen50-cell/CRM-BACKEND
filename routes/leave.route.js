@@ -8,8 +8,11 @@ import {
   updateLeave, 
   deleteLeave,
   getEmployeeLeaves,
-  updateLeaveStatus 
+  updateLeaveStatus,
+  getTeamLeaves,
+  canDecideLeave,
 } from "../controllers/leave.controller.js";
+import { loadCurrentUser } from "../utils/access.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 
 const router = express.Router();
@@ -17,11 +20,12 @@ const router = express.Router();
 // Employee routes
 router.post("/", isAuthenticated, createLeave);
 router.get("/employee", isAuthenticated, getEmployeeLeaves);
+router.get("/team", isAuthenticated, loadCurrentUser, getTeamLeaves);
 router.get("/:id", isAuthenticated, getLeaveById);
 
 // Admin routes
 router.get("/", isAuthenticated, isAdmin, getLeaves);
-router.put("/:id/status", isAuthenticated, isAdmin, updateLeaveStatus);
+router.put("/:id/status", isAuthenticated, loadCurrentUser, canDecideLeave, updateLeaveStatus);
 router.put("/:id", isAuthenticated, updateLeave);
 router.delete("/:id", isAuthenticated, deleteLeave);
 

@@ -37,6 +37,16 @@ const userSchema = new mongoose.Schema(
         default: "",
       },
     },
+    // Team memberships: one entry per team, with the person's sub-role there and whether they lead it
+    teams: [
+      {
+        team: { type: mongoose.Schema.Types.ObjectId, ref: "Team" },
+        teamName: { type: String, default: "" },
+        subRole: { type: String, default: "" },
+        isLead: { type: Boolean, default: false },
+        _id: false,
+      },
+    ],
     // Password reset code: only a hash is stored; it's single-use and locks after too many wrong tries
     resetOtp: String,
     resetOtpExpiry: Date,
