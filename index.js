@@ -30,6 +30,8 @@ import contentRoute from "./routes/content.route.js";
 import timeRoute from "./routes/time.route.js";
 import publicRoute from "./routes/public.route.js";
 import teamRoute from "./routes/team.route.js";
+import hrRoute from "./routes/hr.route.js";
+import { backfillLeaveDays } from "./controllers/hr.controller.js";
 import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
 import { startSequenceRunner } from "./utils/sequenceRunner.js";
@@ -170,6 +172,7 @@ app.use("/api/v1/portal-access", portalAccessRouter);
 app.use("/api/v1/portal", portalRouter);
 app.use("/api/v1/public", publicRoute);
 app.use("/api/v1/team", teamRoute);
+app.use("/api/v1/hr", hrRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -185,6 +188,7 @@ const PORT = process.env.PORT || 8000;
 app.listen(PORT, async () => {
   await connectDB();
   ensureSalesTeam().catch((err) => console.error("Sales team setup failed:", err.message));
+  backfillLeaveDays().catch((err) => console.error("Leave day backfill failed:", err.message));
   startFollowUpDigest();
   startSequenceRunner();
   startBillingRunner();

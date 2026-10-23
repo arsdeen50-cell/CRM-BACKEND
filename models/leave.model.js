@@ -25,6 +25,11 @@ const leaveSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // Half day: start and end are the same day
+    halfDay: { type: Boolean, default: false },
+    halfDaySession: { type: String, enum: ["First half", "Second half", ""], default: "" },
+    // Working days taken (weekly offs and holidays excluded), worked out when the request is made
+    days: { type: Number, default: 0 },
     status: {
       type: String,
       enum: ["Pending", "Approved", "Rejected"],

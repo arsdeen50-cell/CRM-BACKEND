@@ -1,43 +1,55 @@
 // controllers/leave.controller.js
 import { Leave } from "../models/leave.model.js";
 import { User } from "../models/user.model.js";
+import { countLeaveDays, leaveBalance } from "../utils/hrCalendar.js";
 
 // Create a leave request
+/* Body: { leaveType, startDate, endDate, reason, halfDay, halfDaySession }
+   Days are counted without weekly offs and holidays; limited leave types can't go over the balance. */
 export const createLeave = async (req, res) => {
   try {
     const { leaveType, startDate, endDate, reason } = req.body;
+    const start = new Date(startDate), end = new Date(endDate || startDate);
+    if (isNaN(start) || isNaN(end)) return res.status(400).json({ success: false, message: "Pick a start and end date" });
+    if (end < start) return res.status(400).json({ success: false, message: "End date can't be before the start date" });
+    const halfDay = String(req.body.halfDay) === "true" && start.toDateString() === end.toDateString();
+    const days = await countLeaveDays(start, end, halfDay);
+    if (days <= 0) return res.status(400).json({ success: false, message: "Those dates are weekly offs or holidays - no leave needed" });
+
+    const balance = await leaveBalance(req.id, start);
+    const b = balance.types[leaveType];
+    if (b && b.available !== null && days > b.available) {
+      return res.status(400).json({ success: false, message: `Only ${b.available} ${leaveType} day${b.available === 1 ? "" : "s"} left this leave year (this request is ${days}).`, balance: b });
+    }
 
     const user = await User.findById(req.id);
-
     const leave = new Leave({
       employee: req.id,
       leaveType,
-      startDate,
-      endDate,
+      startDate: start,
+      endDate: end,
       reason,
+      halfDay,
+      halfDaySession: halfDay ? req.body.halfDaySession || "First half" : "",
+      days,
       status: "Pending",
-       logs: [
-    {
-      action: "Created the leave request",
-      by: user.fullname || user.email,
-    },
-  ],
+      logs: [{ action: `Created the leave request (${days} day${days === 1 ? "" : "s"})`, by: user.fullname || user.email }],
     });
-
     await leave.save();
-    
-    const populatedLeave = await Leave.findById(leave._id).populate('employee', 'fullname email');
-    
-    res.status(201).json({
-      success: true,
-      leave: populatedLeave
-    });
+    const populatedLeave = await Leave.findById(leave._id).populate("employee", "fullname email");
+    res.status(201).json({ success: true, leave: populatedLeave });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// GET /leave/balance - my leave balance for the current leave year
+export const getMyLeaveBalance = async (req, res) => {
+  try {
+    res.json({ success: true, balance: await leaveBalance(req.id, req.query.date ? new Date(req.query.date) : new Date()) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -191,6 +203,10 @@ export const updateLeave = async (req, res) => {
         message: "Leave not found"
       });
     }
+    const isOwner = String(leave.employee) === String(req.id);
+    if (req.role !== "admin" && !(isOwner && leave.status === "Pending")) {
+      return res.status(403).json({ success: false, message: "You can only change your own pending requests" });
+    }
 
     const admin = await User.findById(req.id);
 
@@ -198,6 +214,8 @@ export const updateLeave = async (req, res) => {
     leave.startDate = startDate || leave.startDate;
     leave.endDate = endDate || leave.endDate;
     leave.reason = reason || leave.reason;
+    if (req.body.halfDay !== undefined) leave.halfDay = String(req.body.halfDay) === "true" && new Date(leave.startDate).toDateString() === new Date(leave.endDate).toDateString();
+    leave.days = await countLeaveDays(leave.startDate, leave.endDate, leave.halfDay);
 
     leave.logs.push({
   action: "Leave details updated",
@@ -225,6 +243,10 @@ export const updateLeave = async (req, res) => {
 // Delete leave (admin only)
 export const deleteLeave = async (req, res) => {
   try {
+    const existing = await Leave.findById(req.params.id).select("employee status").lean();
+    if (existing && req.role !== "admin" && !(String(existing.employee) === String(req.id) && existing.status === "Pending")) {
+      return res.status(403).json({ success: false, message: "You can only cancel your own pending requests" });
+    }
     const leave = await Leave.findByIdAndDelete(req.params.id);
     
     if (!leave) {
