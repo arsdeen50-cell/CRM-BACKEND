@@ -6,6 +6,8 @@ import getDataUri from "../utils/datauri.js";
 import { escapeRegex, leadScopeFilter, canAccessLead, displayName } from "../utils/access.js";
 import { logAudit, diffFields } from "../utils/audit.js";
 import { createProjectForWonLead } from "../utils/projectFromLead.js";
+import { stopSequencesForLead } from "../utils/sequenceRunner.js";
+import { ENGAGED_OUTCOMES } from "../utils/leadActivity.js";
 
 /* ---------------------- Create Lead Source ---------------------- */
 export const createLeadSource = async (req, res) => {
@@ -343,6 +345,7 @@ export const updateLeadStage = async (req, res) => {
     });
 
     await lead.save();
+    if (["Won", "Lost"].includes(stage)) await stopSequencesForLead(lead._id, `Lead ${stage}`);
     logAudit(req, {
       entityType: "LeadSource",
       entityId: lead._id,
@@ -423,6 +426,10 @@ export const logLeadActivity = async (req, res) => {
     if (Object.keys($set).length) update.$set = $set;
 
     const lead = await LeadSource.findByIdAndUpdate(id, update, { new: true, runValidators: true }).populate('clientId');
+    // A reply / decision ends any automated follow-up sequence for this lead
+    if (ENGAGED_OUTCOMES.includes(outcome)) {
+      await stopSequencesForLead(lead._id, `Outcome logged: ${outcome}`, { onlyStopOnReply: true });
+    }
 
     logAudit(req, {
       entityType: "LeadSource",

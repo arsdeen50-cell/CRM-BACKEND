@@ -20,7 +20,19 @@ import proposalRoute from "./routes/proposal.route.js";
 import projectRoute from "./routes/project.route.js";
 import templateRoute from "./routes/template.route.js";
 import auditRoute from "./routes/audit.route.js";
+import messagingRoute from "./routes/messaging.route.js";
+import sequenceRoute from "./routes/sequence.route.js";
+import leadFormRoute from "./routes/leadForm.route.js";
+import targetRoute from "./routes/target.route.js";
+import invoiceRoute from "./routes/invoice.route.js";
+import retainerRoute from "./routes/retainer.route.js";
+import contentRoute from "./routes/content.route.js";
+import timeRoute from "./routes/time.route.js";
+import publicRoute from "./routes/public.route.js";
+import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
+import { startSequenceRunner } from "./utils/sequenceRunner.js";
+import { startBillingRunner } from "./utils/billingRunner.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -36,7 +48,8 @@ const app = express();
 app.set("trust proxy", 1);
 
 /* ================= BODY PARSERS ================= */
-app.use(express.json({ limit: "50mb" }));
+// Keep the raw body: Meta and Razorpay webhooks are verified by signing the exact bytes received
+app.use(express.json({ limit: "50mb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
@@ -82,6 +95,7 @@ app.use(
       "X-Requested-With",
       "Accept",
       "Origin",
+      "X-Portal-Token",
     ],
   })
 );
@@ -142,6 +156,17 @@ app.use("/api/v1/proposal", proposalRoute);
 app.use("/api/v1/project", projectRoute);
 app.use("/api/v1/template", templateRoute);
 app.use("/api/v1/audit", auditRoute);
+app.use("/api/v1/messages", messagingRoute);
+app.use("/api/v1/sequence", sequenceRoute);
+app.use("/api/v1/leadform", leadFormRoute);
+app.use("/api/v1/target", targetRoute);
+app.use("/api/v1/invoice", invoiceRoute);
+app.use("/api/v1/retainer", retainerRoute);
+app.use("/api/v1/content", contentRoute);
+app.use("/api/v1/time", timeRoute);
+app.use("/api/v1/portal-access", portalAccessRouter);
+app.use("/api/v1/portal", portalRouter);
+app.use("/api/v1/public", publicRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -157,5 +182,7 @@ const PORT = process.env.PORT || 8000;
 app.listen(PORT, async () => {
   await connectDB();
   startFollowUpDigest();
+  startSequenceRunner();
+  startBillingRunner();
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

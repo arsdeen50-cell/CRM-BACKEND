@@ -34,6 +34,23 @@ const proposalSchema = new mongoose.Schema(
     sentAt: { type: Date },
     decidedAt: { type: Date },
     createdBy: { type: String, default: "" },
+
+    // Shareable client link: view tracking + online acceptance with signature
+    publicToken: { type: String, index: true, sparse: true },
+    viewCount: { type: Number, default: 0 },
+    firstViewedAt: { type: Date },
+    lastViewedAt: { type: Date },
+    views: [{ at: { type: Date, default: Date.now }, ip: String, userAgent: String, _id: false }],
+    signature: {
+      name: String,
+      title: String,
+      email: String,
+      signedAt: Date,
+      ip: String,
+      userAgent: String,
+      image: String, // PNG data URL of the drawn signature
+    },
+    declineReason: { type: String, default: "" },
   },
   { timestamps: true }
 );

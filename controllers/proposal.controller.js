@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
 import { Proposal, PROPOSAL_STATUSES } from "../models/proposal.model.js";
-import { LeadSource, PIPELINE_STAGES } from "../models/leadSource.model.js";
+import { LeadSource } from "../models/leadSource.model.js";
 import { LeadClient } from "../models/leadClient.model.js";
 import { renderProposalPdf } from "../utils/proposalPdf.js";
-import { createProjectForWonLead } from "../utils/projectFromLead.js";
+import { applyProposalStatus } from "../utils/proposalActions.js";
+import { sendLeadEmail } from "../utils/emailService.js";
+import { appUrl, companyName, randomToken } from "../utils/config.js";
+import { isRealEmail } from "../utils/phone.js";
 import { isAdminReq, leadScopeFilter, canAccessLead, displayName } from "../utils/access.js";
 import { logAudit, diffFields } from "../utils/audit.js";
 
@@ -29,6 +32,7 @@ export const getProposals = async (req, res) => {
       ...(leadId && mongoose.Types.ObjectId.isValid(leadId) && { leadId }),
       ...(status && { status }),
     })
+      .select("-views -signature.image")
       .populate("leadId", "series pipelineStage clientName")
       .sort({ createdAt: -1 });
     res.status(200).json({ success: true, proposals, statuses: PROPOSAL_STATUSES });
@@ -117,48 +121,47 @@ export const downloadProposalPdf = async (req, res) => {
   }
 };
 
-/* PATCH /proposal/:id/status { status }
-   Sent     -> lead: proposalSent "Yes", dealValue = proposal total, stage moves up to "Proposal Sent"
-   Accepted -> lead: stage "Won" (+ project and kickoff task, linked to this proposal)
-   Rejected -> recorded only; the lead stage is left for you to decide */
+/* PATCH /proposal/:id/status { status } - see utils/proposalActions.js for the effects on the lead */
 export const updateProposalStatus = async (req, res) => {
   try {
     const { status } = req.body || {};
     if (!PROPOSAL_STATUSES.includes(status)) return res.status(400).json({ success: false, message: `Status must be one of ${PROPOSAL_STATUSES.join(", ")}` });
     const proposal = await findScoped(req, req.params.id);
     if (!proposal) return res.status(404).json({ success: false, message: "Proposal not found" });
-
     const previous = proposal.status;
-    proposal.status = status;
-    if (status === "Sent" && !proposal.sentAt) proposal.sentAt = new Date();
-    if (["Accepted", "Rejected"].includes(status)) proposal.decidedAt = new Date();
-    await proposal.save();
-
-    const lead = await LeadSource.findById(proposal.leadId);
-    let project = null;
-    if (lead) {
-      const moveTo = (stage) => {
-        if (lead.pipelineStage === stage) return;
-        lead.pipelineStage = stage;
-        lead.stageHistory.push({ stage, changedAt: new Date(), changedBy: displayName(req), reason: `Proposal ${proposal.proposalNo} ${status.toLowerCase()}` });
-      };
-      if (status === "Sent") {
-        lead.proposalSent = "Yes";
-        lead.dealValue = proposal.total;
-        if (PIPELINE_STAGES.indexOf(lead.pipelineStage) < PIPELINE_STAGES.indexOf("Proposal Sent")) moveTo("Proposal Sent");
-      }
-      if (status === "Accepted") {
-        lead.dealValue = proposal.total;
-        moveTo("Won");
-      }
-      await lead.save();
-      if (status === "Accepted") {
-        project = await createProjectForWonLead(req, lead, { proposalId: proposal._id, value: proposal.total });
-      }
-    }
-
+    const { project } = await applyProposalStatus(req, proposal, status, displayName(req));
     logAudit(req, { entityType: "Proposal", entityId: proposal._id, entityLabel: proposal.proposalNo, action: "status", summary: `Status ${previous} -> ${status}` });
     res.status(200).json({ success: true, proposal, project });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || "Server error" });
+  }
+};
+
+/* POST /proposal/:id/share - creates the client link (view tracking + online acceptance).
+   A Draft becomes Sent. Body { email: true, to, message } also emails the link to the client. */
+export const shareProposal = async (req, res) => {
+  try {
+    const proposal = await findScoped(req, req.params.id);
+    if (!proposal) return res.status(404).json({ success: false, message: "Proposal not found" });
+    if (["Accepted", "Rejected"].includes(proposal.status)) {
+      if (!proposal.publicToken) return res.status(400).json({ success: false, message: `This proposal is already ${proposal.status.toLowerCase()}` });
+    }
+    if (!proposal.publicToken) proposal.publicToken = randomToken(24);
+    if (proposal.status === "Draft") await applyProposalStatus(req, proposal, "Sent", displayName(req));
+    else await proposal.save();
+    const url = `${appUrl()}/p/${proposal.publicToken}`;
+    let emailed = null;
+    if (req.body?.email) {
+      const lead = await LeadSource.findById(proposal.leadId);
+      const to = (req.body.to || lead?.clientId?.email || "").trim();
+      if (!isRealEmail(to)) return res.status(400).json({ success: false, message: "No real email on file for this client - copy the link instead", url });
+      const first = lead?.clientId?.contactPerson && !/not identified/i.test(lead.clientId.contactPerson) ? lead.clientId.contactPerson.split(/\s+/)[0] : "there";
+      const body = req.body.message || `Hi ${first},\n\nHere is our proposal "${proposal.title}". You can review it, download the PDF and accept it online here:\n\n${url}\n\nHappy to walk you through it on a quick call.\n\n${displayName(req)}\n${companyName()}`;
+      emailed = await sendLeadEmail({ lead, to, subject: req.body.subject || `Proposal: ${proposal.title}`, body, sentBy: displayName(req), replyTo: req.currentUser?.email, source: "proposal" });
+      if (emailed.status === "Failed") return res.status(502).json({ success: false, message: `Link created but the email failed: ${emailed.error}`, url });
+    }
+    logAudit(req, { entityType: "Proposal", entityId: proposal._id, entityLabel: proposal.proposalNo, action: "update", summary: emailed ? `Link emailed to ${emailed.to}` : "Client link created" });
+    res.json({ success: true, url, proposal, emailed: !!emailed });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || "Server error" });
   }

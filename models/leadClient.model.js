@@ -69,6 +69,11 @@ const leadClientSchema = new mongoose.Schema(
       researchedAt: { type: Date },
       externalId: { type: String, default: "" },
     },
+    // Messaging identities captured from webhooks (Instagram DM sender id)
+    igUserId: { type: String, default: "", index: true },
+    // Billing details for invoices
+    billingAddress: { type: String, default: "" },
+    gstin: { type: String, default: "" },
     createdBy: {
       type: String,
       required: true,

@@ -14,7 +14,7 @@ const printer = new PdfPrinter({
 });
 
 // Company details shown on proposals. Override with env vars so each workspace can brand its own.
-const company = () => ({
+export const company = () => ({
   name: process.env.COMPANY_NAME || "Trends of Media",
   tagline: process.env.COMPANY_TAGLINE || "A creative marketing agency by Arsdeen",
   address: process.env.COMPANY_ADDRESS || "Mumbai, India",
@@ -23,9 +23,9 @@ const company = () => ({
   gstin: process.env.COMPANY_GSTIN || "",
 });
 
-const money = (n, currency = "INR") =>
+export const money = (n, currency = "INR") =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n) || 0);
-const date = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-");
+export const date = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-");
 
 export const buildProposalDoc = (proposal, client = {}) => {
   const c = company();
@@ -96,16 +96,29 @@ export const buildProposalDoc = (proposal, client = {}) => {
         ],
       },
       ...(proposal.terms ? [{ text: "Terms", bold: true, margin: [0, 18, 0, 4] }, { text: proposal.terms, fontSize: 9, lineHeight: 1.3, color: "#444" }] : []),
+      ...(proposal.signature?.signedAt
+        ? [
+            { text: "Accepted", bold: true, margin: [0, 18, 0, 4] },
+            ...(proposal.signature.image?.startsWith("data:image/png") ? [{ image: proposal.signature.image, width: 160, margin: [0, 0, 0, 4] }] : []),
+            {
+              text: `${proposal.signature.name}${proposal.signature.title ? `, ${proposal.signature.title}` : ""} - signed online on ${new Date(proposal.signature.signedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST${proposal.signature.ip ? ` from IP ${proposal.signature.ip}` : ""}`,
+              fontSize: 9,
+              color: "#444",
+            },
+          ]
+        : []),
     ],
   };
 };
 
-export const renderProposalPdf = (proposal, client) =>
+export const renderPdf = (docDefinition) =>
   new Promise((resolve, reject) => {
-    const doc = printer.createPdfKitDocument(buildProposalDoc(proposal, client));
+    const doc = printer.createPdfKitDocument(docDefinition);
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
     doc.end();
   });
+
+export const renderProposalPdf = (proposal, client) => renderPdf(buildProposalDoc(proposal, client));
