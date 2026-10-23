@@ -33,6 +33,7 @@ import teamRoute from "./routes/team.route.js";
 import hrRoute from "./routes/hr.route.js";
 import dashboardRoute from "./routes/dashboard.route.js";
 import { backfillLeaveDays } from "./controllers/hr.controller.js";
+import { scrubSignupPasswords } from "./controllers/goOnBoarding.controller.js";
 import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
 import { startSequenceRunner } from "./utils/sequenceRunner.js";
@@ -59,70 +60,28 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 /* ================= CORS ================= */
-/* ================= CORS ================= */
+// Browsers may call the API only from the CRM site. Requests without an Origin header (server-to-server
+// webhooks, curl, mobile apps) are not affected - CORS is a browser rule, not authentication.
+// CORS_EXTRA_ORIGINS (comma separated) adds origins, e.g. http://localhost:3000 for local development.
 const allowedOrigins = [
   "https://crm.arsdeen.cloud",
   "https://www.crm.arsdeen.cloud",
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
+  "https://api.crm.arsdeen.cloud", // pages the API serves itself
+  ...String(process.env.CORS_EXTRA_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean),
 ];
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Postman, mobile apps, server-to-server requests
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      console.log("❌ Blocked CORS:", origin);
-
-      // TEMP: allow all origins while debugging
-      return callback(null, true);
-    },
-
-    credentials: true,
-
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "PATCH",
-      "DELETE",
-      "OPTIONS",
-    ],
-
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Requested-With",
-      "Accept",
-      "Origin",
-      "X-Portal-Token",
-    ],
-  })
-);
-
-// Handle preflight requests
-app.options(
-  "*",
-  cors({
-    origin: true,
-    credentials: true,
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "PATCH",
-      "DELETE",
-      "OPTIONS",
-    ],
-  })
-);
-
-app.options("*", cors());
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    console.log("❌ Blocked CORS:", origin);
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin", "X-Portal-Token"],
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 /* ================= SESSION ================= */
 app.use(
@@ -191,6 +150,7 @@ app.listen(PORT, async () => {
   await connectDB();
   ensureSalesTeam().catch((err) => console.error("Sales team setup failed:", err.message));
   backfillLeaveDays().catch((err) => console.error("Leave day backfill failed:", err.message));
+  scrubSignupPasswords().catch((err) => console.error("Signup password scrub failed:", err.message));
   startFollowUpDigest();
   startSequenceRunner();
   startBillingRunner();
