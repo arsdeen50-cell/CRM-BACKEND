@@ -17,7 +17,16 @@ export const loadCurrentUser = async (req, res, next) => {
       req.currentUser = cached.user;
       return next();
     }
-    const user = await User.findById(req.id).select("fullname email role").lean();
+    const user = await User.findById(req.id).select("fullname email role teams").lean();
+    if (user) {
+      // Team Leads also see the work of everyone in the teams they lead
+      const ledTeams = (user.teams || []).filter((t) => t.isLead && t.team);
+      user.ledTeamNames = ledTeams.map((t) => t.teamName).filter(Boolean);
+      user.ledTeamIds = ledTeams.map((t) => String(t.team));
+      user.teamMemberNames = ledTeams.length
+        ? (await User.find({ "teams.team": { $in: ledTeams.map((t) => t.team) } }).select("fullname").lean()).map((u) => u.fullname).filter(Boolean)
+        : [];
+    }
     if (!user) return res.status(401).json({ success: false, message: "User not found" });
     userCache.set(String(req.id), { user, expires: Date.now() + CACHE_MS });
     req.currentUser = user;
@@ -43,24 +52,40 @@ const nameRegex = (fullname = "") => {
   return new RegExp(`^\\s*(${options.join("|")})\\s*$`, "i");
 };
 
+const ASSIGNMENT_FIELDS = ["projectAccountHandledBy", "teamMember", "teamAssigned", "createdBy"];
+const exactRx = (values) => new RegExp(`^\\s*(${values.map(escapeRegex).join("|")})\\s*$`, "i");
+
+export const isTeamLeadReq = (req) => (req.currentUser?.ledTeamIds || []).length > 0;
+
+/* Employees see leads assigned to them by name. A Team Lead also sees leads whose "Team assigned" is a
+   team they lead, and leads assigned to anyone in those teams. Admins see everything. */
 export const leadScopeFilter = (req) => {
   if (isAdminReq(req) || !req.currentUser) return {};
   const rx = nameRegex(req.currentUser.fullname);
-  return {
-    $or: [
-      { projectAccountHandledBy: rx },
-      { teamMember: rx },
-      { teamAssigned: rx },
-      { createdBy: rx },
-    ],
-  };
+  const or = ASSIGNMENT_FIELDS.map((f) => ({ [f]: rx }));
+  const { ledTeamNames = [], teamMemberNames = [] } = req.currentUser;
+  if (ledTeamNames.length) or.push({ teamAssigned: exactRx(ledTeamNames) });
+  // A member's work is only visible to the lead when it isn't assigned to some other team
+  const noTeam = { $or: [{ teamAssigned: { $exists: false } }, { teamAssigned: null }, { teamAssigned: "" }] };
+  for (const name of teamMemberNames) {
+    const mrx = nameRegex(name);
+    or.push(...["projectAccountHandledBy", "teamMember", "createdBy"].map((f) => ({ $and: [{ [f]: mrx }, noTeam] })));
+  }
+  return { $or: or };
 };
 
 export const canAccessLead = (req, lead) => {
   if (isAdminReq(req)) return true;
   if (!lead || !req.currentUser) return false;
   const rx = nameRegex(req.currentUser.fullname);
-  return ["projectAccountHandledBy", "teamMember", "teamAssigned", "createdBy"].some((f) => rx.test(lead[f] || ""));
+  if (ASSIGNMENT_FIELDS.some((f) => rx.test(lead[f] || ""))) return true;
+  const { ledTeamNames = [], teamMemberNames = [] } = req.currentUser;
+  if (ledTeamNames.length && exactRx(ledTeamNames).test(lead.teamAssigned || "")) return true;
+  if (String(lead.teamAssigned || "").trim()) return false;
+  return teamMemberNames.some((name) => ["projectAccountHandledBy", "teamMember", "createdBy"].some((f) => nameRegex(name).test(lead[f] || "")));
 };
+
+// Clear cached users (after an admin changes someone's teams)
+export const clearUserCache = () => userCache.clear();
 
 export const displayName = (req) => req.currentUser?.fullname || "Unknown";

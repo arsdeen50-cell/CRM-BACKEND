@@ -246,3 +246,34 @@ export const deleteLeave = async (req, res) => {
     });
   }
 };
+// IDs of everyone in the teams the current user leads (not including themselves)
+const teamMemberIds = async (req) => {
+  const ledIds = req.currentUser?.ledTeamIds || [];
+  if (!ledIds.length) return [];
+  const users = await User.find({ "teams.team": { $in: ledIds }, _id: { $ne: req.id } }).select("_id").lean();
+  return users.map((u) => u._id);
+};
+
+// GET /leave/team - Team Lead: leave requests from people in the teams they lead
+export const getTeamLeaves = async (req, res) => {
+  try {
+    const ids = await teamMemberIds(req);
+    if (!ids.length && req.role !== "admin") return res.status(403).json({ success: false, message: "Only Team Leads can see team leave" });
+    const leaves = await Leave.find({ employee: { $in: ids } }).populate("employee", "fullname email").sort({ createdAt: -1 });
+    const counts = { Pending: 0, Approved: 0, Rejected: 0, total: leaves.length };
+    for (const l of leaves) counts[l.status] = (counts[l.status] || 0) + 1;
+    res.json({ success: true, leaves, counts });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// Admins approve anyone's leave; a Team Lead approves leave of people in the teams they lead (not their own)
+export const canDecideLeave = async (req, res, next) => {
+  if (req.role === "admin") return next();
+  const leave = await Leave.findById(req.params.id).select("employee").lean().catch(() => null);
+  if (!leave) return res.status(404).json({ success: false, message: "Leave not found" });
+  const ids = (await teamMemberIds(req)).map(String);
+  if (!ids.includes(String(leave.employee))) return res.status(403).json({ success: false, message: "Only an admin or the employee's Team Lead can approve this" });
+  next();
+};

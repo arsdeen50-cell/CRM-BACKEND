@@ -116,6 +116,8 @@ export const login = async (req, res) => {
       profile: user.profile,
       role: user.role,
       empId: user.empId,
+      teams: user.teams || [],
+      isTeamLead: (user.teams || []).some((t) => t.isLead),
       token,
     };
 

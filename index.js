@@ -29,6 +29,7 @@ import retainerRoute from "./routes/retainer.route.js";
 import contentRoute from "./routes/content.route.js";
 import timeRoute from "./routes/time.route.js";
 import publicRoute from "./routes/public.route.js";
+import teamRoute from "./routes/team.route.js";
 import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
 import { startSequenceRunner } from "./utils/sequenceRunner.js";
@@ -167,6 +168,7 @@ app.use("/api/v1/time", timeRoute);
 app.use("/api/v1/portal-access", portalAccessRouter);
 app.use("/api/v1/portal", portalRouter);
 app.use("/api/v1/public", publicRoute);
+app.use("/api/v1/team", teamRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
