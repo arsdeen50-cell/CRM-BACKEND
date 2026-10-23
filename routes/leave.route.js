@@ -11,6 +11,7 @@ import {
   updateLeaveStatus,
   getTeamLeaves,
   canDecideLeave,
+  getMyLeaveBalance,
 } from "../controllers/leave.controller.js";
 import { loadCurrentUser } from "../utils/access.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
@@ -21,6 +22,7 @@ const router = express.Router();
 router.post("/", isAuthenticated, createLeave);
 router.get("/employee", isAuthenticated, getEmployeeLeaves);
 router.get("/team", isAuthenticated, loadCurrentUser, getTeamLeaves);
+router.get("/balance", isAuthenticated, getMyLeaveBalance);
 router.get("/:id", isAuthenticated, getLeaveById);
 
 // Admin routes
