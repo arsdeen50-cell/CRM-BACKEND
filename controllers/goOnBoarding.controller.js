@@ -851,3 +851,50 @@ export const createOnboardingFromSignup = async (req, res) => {
     });
   }
 };
+/* ---------------- Candidate self-service (no login) ----------------
+   The candidate's emailed link only ever sees a safe summary of their own record, and can submit
+   their part of the form once, while HR has the form open ("Send Link To Candidate"). */
+const CANDIDATE_FIELDS = ["uanNo", "esic", "bankName", "bankAccountNo", "branchName", "IfcCode", "emergencyContactName", "emergencyContactNo"];
+const CANDIDATE_FILES = ["chequePassBookImage", "educationCertificateImage", "previousEmployeImage"];
+
+export const getCandidateView = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ success: false, message: "Form not found" });
+    const o = await GoOnBoarding.findById(req.params.id).select("candidateName email mobileNo designation doj positionType keyResponsibilities whatYoullGain candidateFormSubmitted candidateStatus").lean();
+    if (!o) return res.status(404).json({ success: false, message: "Form not found" });
+    res.json({ success: true, onboarding: o });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const submitCandidateForm = async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ success: false, message: "Form not found" });
+    const o = await GoOnBoarding.findById(req.params.id).select("candidateFormSubmitted candidateStatus").lean();
+    if (!o) return res.status(404).json({ success: false, message: "Form not found" });
+    if (o.candidateFormSubmitted) return res.status(400).json({ success: false, message: "This form has already been submitted" });
+    if (o.candidateStatus !== "Send Link To Candidate") return res.status(400).json({ success: false, message: "This form isn't open for submission. Please contact HR." });
+    // Only the candidate's own fields and documents; everything else is set by HR
+    req.body = {
+      ...Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => CANDIDATE_FIELDS.includes(k))),
+      candidateFormSubmitted: true,
+      candidateFormSubmittedAt: new Date().toISOString(),
+      candidateStatus: "Documents Submitted",
+    };
+    req.files = (req.files || []).filter((f) => CANDIDATE_FILES.includes(f.fieldname));
+    return updateGoOnBoarding(req, res, next);
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// POST /onboarding/check-duplicate { candidateName, email, mobileNo } - used by the public signup form
+export const checkDuplicateOnboarding = async (req, res) => {
+  const { email = "", mobileNo = "" } = req.body || {};
+  const or = [];
+  if (String(email).trim()) or.push({ email: new RegExp(`^${String(email).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
+  if (String(mobileNo).trim()) or.push({ mobileNo: String(mobileNo).trim() });
+  const duplicate = or.length ? !!(await GoOnBoarding.exists({ $or: or })) : false;
+  res.json({ success: true, duplicate });
+};

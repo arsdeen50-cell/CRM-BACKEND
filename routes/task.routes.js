@@ -16,6 +16,6 @@ router.delete("/admin/:id", isAuthenticated, isAdmin, deleteAdminTask);
 // Shared routes
 router.get("/admin", isAuthenticated, getAdminTasks);
 router.put("/admin/:id", isAuthenticated, updateAdminTask);
-router.get("/assignuser",getAllUsers);
+router.get("/assignuser", isAuthenticated, getAllUsers);
 
 export default router;
