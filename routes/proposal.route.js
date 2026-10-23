@@ -10,10 +10,10 @@ import {
   shareProposal,
 } from "../controllers/proposal.controller.js";
 import isAuthenticated from "../middlewares/isAuthentications.js";
-import { loadCurrentUser, adminOnly } from "../utils/access.js";
+import { loadCurrentUser, adminOnly, requireSales } from "../utils/access.js";
 
 const router = express.Router();
-router.use(isAuthenticated, loadCurrentUser);
+router.use(isAuthenticated, loadCurrentUser, requireSales);
 
 router.get("/", getProposals);
 router.post("/", createProposal);
