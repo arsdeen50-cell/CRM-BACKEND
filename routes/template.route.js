@@ -1,10 +1,10 @@
 import express from "express";
 import { getTemplates, createTemplate, updateTemplate, deleteTemplate, addStarterTemplates } from "../controllers/template.controller.js";
 import isAuthenticated from "../middlewares/isAuthentications.js";
-import { loadCurrentUser, adminOnly } from "../utils/access.js";
+import { loadCurrentUser, adminOnly, requireSales } from "../utils/access.js";
 
 const router = express.Router();
-router.use(isAuthenticated, loadCurrentUser);
+router.use(isAuthenticated, loadCurrentUser, requireSales);
 
 router.get("/", getTemplates);
 router.post("/starters", adminOnly, addStarterTemplates);

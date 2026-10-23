@@ -14,12 +14,12 @@ import {
 } from "../controllers/leadSource.controller.js";
 import { multipleUpload } from "../middlewares/multer.js";
 import isAuthenticated from "../middlewares/isAuthentications.js";
-import { loadCurrentUser, adminOnly } from "../utils/access.js";
+import { loadCurrentUser, adminOnly, requireSales } from "../utils/access.js";
 
 const router = express.Router();
 
 // Every lead endpoint requires a logged-in user (previously these were public).
-router.use(isAuthenticated, loadCurrentUser);
+router.use(isAuthenticated, loadCurrentUser, requireSales);
 
 router.get("/followups", getFollowUps);
 router.get("/reports", adminOnly, getPipelineReports);

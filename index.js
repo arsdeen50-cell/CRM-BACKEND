@@ -34,6 +34,7 @@ import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
 import { startSequenceRunner } from "./utils/sequenceRunner.js";
 import { startBillingRunner } from "./utils/billingRunner.js";
+import { ensureSalesTeam } from "./utils/salesAccess.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -183,6 +184,7 @@ const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, async () => {
   await connectDB();
+  ensureSalesTeam().catch((err) => console.error("Sales team setup failed:", err.message));
   startFollowUpDigest();
   startSequenceRunner();
   startBillingRunner();

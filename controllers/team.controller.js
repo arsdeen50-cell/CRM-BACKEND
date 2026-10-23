@@ -4,13 +4,17 @@ import { User } from "../models/user.model.js";
 import { LeadSource } from "../models/leadSource.model.js";
 import { displayName, clearUserCache, escapeRegex } from "../utils/access.js";
 import { logAudit } from "../utils/audit.js";
+import { ensureSalesTeam } from "../utils/salesAccess.js";
 
 const cleanRoles = (roles) => [...new Set((Array.isArray(roles) ? roles : String(roles || "").split(/[\n,]/)).map((r) => String(r).trim()).filter(Boolean))];
 
 // Creates the starting teams the first time anyone opens the team list
 const ensureDefaults = async () => {
-  if ((await Team.estimatedDocumentCount()) > 0) return;
-  await Team.insertMany(DEFAULT_TEAMS.map((t) => ({ ...t, createdBy: "System" }))).catch(() => {});
+  await ensureSalesTeam().catch((e) => console.error("Sales team setup failed:", e.message));
+  const existing = new Set((await Team.find().select("name").lean()).map((t) => t.name));
+  if (existing.size > 1) return;
+  const missing = DEFAULT_TEAMS.filter((t) => !existing.has(t.name));
+  if (missing.length) await Team.insertMany(missing.map((t) => ({ ...t, createdBy: "System" }))).catch(() => {});
 };
 
 // GET /team - every team with its sub-roles and members (any logged-in user; used by pickers)
@@ -35,17 +39,16 @@ export const getTeams = async (req, res) => {
 
 // GET /team/me - my memberships (the frontend uses this to show Team Lead tools)
 export const getMyTeams = async (req, res) => {
-  const me = await User.findById(req.id).select("teams role").lean();
-  const teams = me?.teams || [];
-  res.json({ success: true, role: me?.role, teams, isTeamLead: teams.some((t) => t.isLead) });
+  const teams = req.currentUser?.teams || [];
+  res.json({ success: true, role: req.currentUser?.role, teams, isTeamLead: teams.some((t) => t.isLead), canSales: !!req.currentUser?.canSales, canOutreach: !!req.currentUser?.canOutreach });
 };
 
 export const createTeam = async (req, res) => {
   try {
-    const { name, description, subRoles, color } = req.body || {};
+    const { name, description, subRoles, color, access } = req.body || {};
     if (!String(name || "").trim()) return res.status(400).json({ success: false, message: "Team name is required" });
     if (await Team.exists({ name: new RegExp(`^${escapeRegex(name.trim())}$`, "i") })) return res.status(400).json({ success: false, message: "A team with this name already exists" });
-    const team = await Team.create({ name: name.trim(), description, subRoles: cleanRoles(subRoles), color, createdBy: displayName(req) });
+    const team = await Team.create({ name: name.trim(), description, subRoles: cleanRoles(subRoles), color, access: { sales: !!access?.sales, outreach: !!access?.outreach }, createdBy: displayName(req) });
     logAudit(req, { entityType: "Team", entityId: team._id, entityLabel: team.name, action: "create", summary: `Team created with ${team.subRoles.length} sub-roles` });
     res.status(201).json({ success: true, team });
   } catch (err) {
@@ -59,8 +62,9 @@ export const updateTeam = async (req, res) => {
   try {
     const team = mongoose.Types.ObjectId.isValid(req.params.id) && (await Team.findById(req.params.id));
     if (!team) return res.status(404).json({ success: false, message: "Team not found" });
-    const { name, description, subRoles, color, isActive } = req.body || {};
+    const { name, description, subRoles, color, isActive, access } = req.body || {};
     const oldName = team.name;
+    if (access !== undefined) team.access = { sales: !!access.sales, outreach: !!access.outreach };
     if (name !== undefined && name.trim() && name.trim() !== oldName) {
       if (await Team.exists({ _id: { $ne: team._id }, name: new RegExp(`^${escapeRegex(name.trim())}$`, "i") })) return res.status(400).json({ success: false, message: "A team with this name already exists" });
       team.name = name.trim();

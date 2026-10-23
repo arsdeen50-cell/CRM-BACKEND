@@ -1,4 +1,5 @@
 import { User } from "../models/user.model.js";
+import { Team } from "../models/team.model.js";
 
 // Escape user input before putting it inside a RegExp (brand names like "Mango Village (Guhagar)").
 export const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -23,6 +24,11 @@ export const loadCurrentUser = async (req, res, next) => {
       const ledTeams = (user.teams || []).filter((t) => t.isLead && t.team);
       user.ledTeamNames = ledTeams.map((t) => t.teamName).filter(Boolean);
       user.ledTeamIds = ledTeams.map((t) => String(t.team));
+      // Area access comes from the teams a person is in (admins have everything)
+      const teamIds = (user.teams || []).map((t) => t.team).filter(Boolean);
+      const teamDocs = teamIds.length ? await Team.find({ _id: { $in: teamIds }, isActive: true }).select("access").lean() : [];
+      user.canSales = user.role === "admin" || teamDocs.some((t) => t.access?.sales);
+      user.canOutreach = user.role === "admin" || teamDocs.some((t) => t.access?.outreach);
       user.teamMemberNames = ledTeams.length
         ? (await User.find({ "teams.team": { $in: ledTeams.map((t) => t.team) } }).select("fullname").lean()).map((u) => u.fullname).filter(Boolean)
         : [];
@@ -34,6 +40,18 @@ export const loadCurrentUser = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// Leads, clients, follow-ups, proposals, templates, targets: admins + teams with Sales access
+export const requireSales = (req, res, next) => {
+  if (isAdminReq(req) || req.currentUser?.canSales) return next();
+  return res.status(403).json({ success: false, message: "Sales access is limited to admins and the sales team." });
+};
+
+// Messages (email / WhatsApp from the CRM) and sequences: admins + teams with Outreach access
+export const requireOutreach = (req, res, next) => {
+  if (isAdminReq(req) || req.currentUser?.canOutreach) return next();
+  return res.status(403).json({ success: false, message: "Outreach automation is limited to admins and the sales team." });
 };
 
 export const adminOnly = (req, res, next) => {
