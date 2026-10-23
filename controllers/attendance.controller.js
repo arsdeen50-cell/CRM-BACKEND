@@ -93,7 +93,8 @@ export const getMyAttendance = async (req, res) => {
 // Get all attendance (admin only)
 export const getAllAttendance = async (req, res) => {
   try {
-    const attendance = await Attendance.find()
+    // Admins see everyone's attendance; anyone else only their own
+    const attendance = await Attendance.find(req.role === "admin" ? {} : { userId: req.id })
       .populate("userId", ["fullname", "email", "empId"])
       .sort({ punchIn: -1 });
 
