@@ -31,6 +31,7 @@ import timeRoute from "./routes/time.route.js";
 import publicRoute from "./routes/public.route.js";
 import teamRoute from "./routes/team.route.js";
 import hrRoute from "./routes/hr.route.js";
+import dashboardRoute from "./routes/dashboard.route.js";
 import { backfillLeaveDays } from "./controllers/hr.controller.js";
 import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
@@ -173,6 +174,7 @@ app.use("/api/v1/portal", portalRouter);
 app.use("/api/v1/public", publicRoute);
 app.use("/api/v1/team", teamRoute);
 app.use("/api/v1/hr", hrRoute);
+app.use("/api/v1/dashboard", dashboardRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
