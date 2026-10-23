@@ -1,4 +1,6 @@
+import mongoose from "mongoose";
 import { User } from "../models/user.model.js";
+import { GoOnBoarding } from "../models/GoOnBoarding.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -10,62 +12,53 @@ import { sendEmail } from "../utils/mailer.js";
 
 // controllers/user.controllers.js - Update register function
 
+/* POST /user/register (admins only) - create a login.
+   Body: fullname, email, phoneNumber, designation, and either
+   - onboardingId: use the password the joiner chose at signup (stored only as a hash), or
+   - password: a password HR sets, or nothing: a random one-time password is generated and returned once. */
 export const register = async (req, res) => {
   try {
-    const { fullname, email, phoneNumber, password, designation } = req.body;
-    
-    if (!fullname || !email || !phoneNumber || !password) {
-      return res.status(400).json({
-        message: "All fields are required",
-        success: false,
-      });
+    const { fullname, email, phoneNumber, password, designation, onboardingId } = req.body;
+
+    if (!fullname || !email || !phoneNumber) {
+      return res.status(400).json({ message: "Name, email and phone number are required", success: false });
+    }
+    if (await User.findOne({ email })) {
+      return res.status(400).json({ message: "User already exist with this email.", success: false });
     }
 
-    const user = await User.findOne({ email });
-
-    if (user) {
-      return res.status(400).json({
-        message: "User already exist with this email.",
-        success: false,
-      });
+    let hashedPassword, generatedPassword;
+    if (onboardingId && mongoose.Types.ObjectId.isValid(onboardingId)) {
+      const ob = await GoOnBoarding.findById(onboardingId).select("signupCredentials").lean();
+      hashedPassword = ob?.signupCredentials?.passwordHash;
+    }
+    if (!hashedPassword) {
+      if (password && String(password).length < 8) return res.status(400).json({ message: "Password must be at least 8 characters", success: false });
+      generatedPassword = password ? undefined : crypto.randomBytes(9).toString("base64url");
+      hashedPassword = await bcrypt.hash(String(password || generatedPassword), 10);
     }
 
     const userCount = await User.countDocuments();
     const empId = `EMP-${String(userCount + 1).padStart(3, "0")}`;
+    const userData = { fullname, email, phoneNumber, password: hashedPassword, empId, designation: designation || "", role: "employee" };
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Initialize user data
-    const userData = {
-      fullname,
-      email,
-      phoneNumber,
-      password: hashedPassword,
-      empId,
-      designation: designation || "", // Save designation if provided
-    };
-
-    // Only process profile photo if file exists
     if (req.file) {
       const fileuri = getDataUri(req.file);
       const cloudResponse = await cloudinary.uploader.upload(fileuri.content);
-      userData.profile = {
-        profilePhoto: cloudResponse.secure_url,
-      };
+      userData.profile = { profilePhoto: cloudResponse.secure_url };
     }
 
     await User.create(userData);
-
     return res.status(200).json({
       message: "Account created successfully.",
       success: true,
+      // shown to the admin once, so they can pass it on (the person can also use Forgot password)
+      ...(generatedPassword && { temporaryPassword: generatedPassword }),
+      usedSignupPassword: !generatedPassword && !password,
     });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({
-      message: "Internal server error",
-      success: false,
-    });
+    return res.status(500).json({ message: "Internal server error", success: false });
   }
 };
 export const login = async (req, res) => {

@@ -18,7 +18,8 @@ import { rateLimit } from "../utils/rateLimit.js";
 
 const router = express.Router();
 
-router.route("/register").post(singleUpload, register);
+// Accounts are created by admins only (joiners sign up through onboarding; HR approves and creates the login)
+router.route("/register").post(isAuthenticated, isAdmin, singleUpload, register);
 router.route("/login").post(login);
 router
   .route("/profile/update")

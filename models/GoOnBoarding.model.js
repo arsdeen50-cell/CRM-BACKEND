@@ -141,7 +141,9 @@ const goOnBoardingSchema = new mongoose.Schema(
       fullname: String,
       email: String,
       phoneNumber: String,
-      password: String,
+      password: String, // legacy: plain text from old signups; cleared on startup, never written now
+      passwordHash: String, // bcrypt hash of the password the joiner chose at signup
+
       file: {
         fileName: String,
         fileUrl: String,

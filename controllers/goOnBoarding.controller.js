@@ -116,12 +116,20 @@ export const createGoOnBoarding = async (req, res) => {
           fullname: onboardingData.signupFullname,
           email: onboardingData.signupEmail || onboardingData.email,
           phoneNumber: onboardingData.signupPhone || onboardingData.mobileNo,
-          password: onboardingData.signupPassword || "Temp@123",
+          password: onboardingData.signupPassword,
           role: 'employee',
           createdAt: new Date(),
         };
       }
     }
+    // Never store the joiner's password: keep only a bcrypt hash, used when HR approves the account
+    if (onboardingData.signupCredentials) {
+      const plain = onboardingData.signupCredentials.password || onboardingData.signupPassword;
+      onboardingData.signupCredentials.passwordHash = plain ? await bcrypt.hash(String(plain), 10) : undefined;
+      delete onboardingData.signupCredentials.password;
+      onboardingData.signupCredentials.role = "employee";
+    }
+    delete onboardingData.signupPassword;
 
     const newOnboarding = new GoOnBoarding(onboardingData);
     await newOnboarding.save();
@@ -189,7 +197,7 @@ export const getGoOnBoardings = async (req, res) => {
       .sort(sortOptions)
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .select("-__v");
+      .select("-__v -signupCredentials.password -signupCredentials.passwordHash");
 
     // Get total count for pagination
     const totalCount = await GoOnBoarding.countDocuments(filter);
@@ -227,7 +235,7 @@ export const getGoOnBoardingById = async (req, res) => {
       });
     }
 
-    const onboarding = await GoOnBoarding.findById(id).select("-__v");
+    const onboarding = await GoOnBoarding.findById(id).select("-__v -signupCredentials.password -signupCredentials.passwordHash");
 
     if (!onboarding) {
       return res.status(404).json({
@@ -355,10 +363,12 @@ export const updateGoOnBoarding = async (req, res) => {
       }
   
       // --- Perform update ---
+      // signup credentials are only ever set at signup, never through an update
+      delete updateData.signupCredentials;
       const updatedOnboarding = await GoOnBoarding.findByIdAndUpdate(id, updateData, {
         new: true,
         runValidators: true,
-      }).select("-__v");
+      }).select("-__v -signupCredentials.password -signupCredentials.passwordHash");
   
       // --- Send email only if candidateStatus changed to 'In Progress' ---
       const prevStatus = existingOnboarding.candidateStatus;
@@ -707,7 +717,7 @@ export const previewOfferLetter = async (req, res) => {
       });
     }
 
-    const onboarding = await GoOnBoarding.findById(id).select("-__v");
+    const onboarding = await GoOnBoarding.findById(id).select("-__v -signupCredentials.password -signupCredentials.passwordHash");
 
     if (!onboarding) {
       return res.status(404).json({
@@ -801,7 +811,7 @@ export const createOnboardingFromSignup = async (req, res) => {
         fullname: candidateName.trim(),
         email: email.trim().toLowerCase(),
         phoneNumber: mobileNo.trim(),
-        password: signupPassword, // Store for later use
+        passwordHash: signupPassword ? await bcrypt.hash(String(signupPassword), 10) : undefined, // only a hash is stored
         file: uploadProfile,
         role: 'employee',
         createdAt: new Date(),
@@ -897,4 +907,15 @@ export const checkDuplicateOnboarding = async (req, res) => {
   if (String(mobileNo).trim()) or.push({ mobileNo: String(mobileNo).trim() });
   const duplicate = or.length ? !!(await GoOnBoarding.exists({ $or: or })) : false;
   res.json({ success: true, duplicate });
+};
+
+// Older signups stored the password in plain text - hash it and remove the plain copy (runs on startup)
+export const scrubSignupPasswords = async () => {
+  const docs = await GoOnBoarding.find({ "signupCredentials.password": { $exists: true, $nin: [null, ""] } }).select("signupCredentials");
+  for (const d of docs) {
+    const plain = d.signupCredentials.password;
+    await GoOnBoarding.updateOne({ _id: d._id }, { $set: { "signupCredentials.passwordHash": d.signupCredentials.passwordHash || (await bcrypt.hash(String(plain), 10)) }, $unset: { "signupCredentials.password": "" } });
+  }
+  if (docs.length) console.log(`🔒 Removed plain-text signup passwords from ${docs.length} onboarding record(s)`);
+  return docs.length;
 };
