@@ -37,8 +37,10 @@ const userSchema = new mongoose.Schema(
         default: "",
       },
     },
-     resetOtp: String,
+    // Password reset code: only a hash is stored; it's single-use and locks after too many wrong tries
+    resetOtp: String,
     resetOtpExpiry: Date,
+    resetOtpAttempts: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

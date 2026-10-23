@@ -1,10 +1,12 @@
 import { User } from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import getDataUri from "../utils/datauri.js";
 import cloudinary from "../utils/cloudinary.js";
 import sendMail from "../middlewares/mail.js";
 import { otpTemplate } from "../emailTemplates/otpTemplate.js";
+import { sendEmail } from "../utils/mailer.js";
 
 // controllers/user.controllers.js - Update register function
 
@@ -244,34 +246,51 @@ export const deleteUserByAdmin = async (req, res) => {
   }
 };
 
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const RESET_GENERIC = "If that email is registered, we've sent a 6-digit code to it.";
+const OTP_INVALID = "Invalid or expired code. Request a new one if needed.";
+const hashOtp = (email, otp) => crypto.createHash("sha256").update(`${String(email).toLowerCase()}|${otp}|${process.env.SECRET_KEY || ""}`).digest("hex");
+const findByEmail = (email) => User.findOne({ email: String(email || "").trim() });
+
+// Checks the code for a user; counts wrong tries and locks the code after OTP_MAX_ATTEMPTS.
+const checkOtp = async (user, email, otp) => {
+  if (!user || !user.resetOtp || !user.resetOtpExpiry || user.resetOtpExpiry < Date.now()) return false;
+  if ((user.resetOtpAttempts || 0) >= OTP_MAX_ATTEMPTS) return false;
+  const given = Buffer.from(hashOtp(email, String(otp || "").trim()));
+  const stored = Buffer.from(user.resetOtp);
+  const ok = given.length === stored.length && crypto.timingSafeEqual(given, stored);
+  if (!ok) {
+    user.resetOtpAttempts = (user.resetOtpAttempts || 0) + 1;
+    if (user.resetOtpAttempts >= OTP_MAX_ATTEMPTS) {
+      user.resetOtp = undefined;
+      user.resetOtpExpiry = undefined;
+    }
+    await user.save();
+  }
+  return ok;
+};
+
+// Same reply whether or not the email exists, so this can't be used to discover accounts.
 export const sendOtp = async (req, res) => {
   try {
-    const { email } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not registered",
-      });
+    const email = String(req.body?.email || "").trim();
+    if (!email) return res.status(400).json({ success: false, message: "Email is required" });
+    const user = await findByEmail(email);
+    if (user) {
+      const otp = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+      user.resetOtp = hashOtp(email, otp);
+      user.resetOtpExpiry = Date.now() + OTP_TTL_MS;
+      user.resetOtpAttempts = 0;
+      await user.save();
+      try {
+        await sendEmail({ to: user.email, subject: "Your password reset code", html: otpTemplate(otp) });
+      } catch (mailErr) {
+        console.error("OTP email failed:", mailErr.message);
+        return res.status(502).json({ success: false, message: "We couldn't send the email right now. Please try again shortly." });
+      }
     }
-
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-
-    user.resetOtp = otp;
-    user.resetOtpExpiry = Date.now() + 10 * 60 * 1000; // 10 min
-    await user.save();
-
-    await sendMail(
-      email,
-      "Password Reset OTP",
-      otpTemplate(otp)
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "OTP sent to your email",
-    });
+    res.status(200).json({ success: true, message: RESET_GENERIC });
   } catch (error) {
     console.log(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -280,56 +299,30 @@ export const sendOtp = async (req, res) => {
 
 export const verifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user || user.resetOtp !== otp) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid OTP",
-      });
-    }
-
-    if (user.resetOtpExpiry < Date.now()) {
-      return res.status(400).json({
-        success: false,
-        message: "OTP expired",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "OTP verified successfully",
-    });
+    const { email, otp } = req.body || {};
+    const user = await findByEmail(email);
+    if (!(await checkOtp(user, String(email || "").trim(), otp))) return res.status(400).json({ success: false, message: OTP_INVALID });
+    res.status(200).json({ success: true, message: "Code verified. Choose a new password." });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
+// Requires the emailed code again: the password only changes with a valid, unexpired, unused code.
 export const resetPassword = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, otp, password } = req.body || {};
+    if (!password || String(password).length < 8) return res.status(400).json({ success: false, message: "Password must be at least 8 characters" });
+    const user = await findByEmail(email);
+    if (!(await checkOtp(user, String(email || "").trim(), otp))) return res.status(400).json({ success: false, message: OTP_INVALID });
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    user.password = hashedPassword;
+    user.password = await bcrypt.hash(String(password), 10);
     user.resetOtp = undefined;
     user.resetOtpExpiry = undefined;
-
+    user.resetOtpAttempts = 0;
     await user.save();
 
-    res.status(200).json({
-      success: true,
-      message: "Password reset successfully",
-    });
+    res.status(200).json({ success: true, message: "Password reset successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server error" });
   }
