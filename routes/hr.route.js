@@ -3,6 +3,7 @@ import isAuthenticated from "../middlewares/isAuthentications.js";
 import { loadCurrentUser, adminOnly } from "../utils/access.js";
 import { singleUpload } from "../middlewares/multer.js";
 import * as c from "../controllers/hr.controller.js";
+import * as x from "../controllers/exit.controller.js";
 
 const router = express.Router();
 router.use(isAuthenticated, loadCurrentUser);
@@ -49,5 +50,19 @@ router.post("/payroll/runs/:id/reopen", adminOnly, c.setPayrollStatus);
 router.post("/payroll/runs/:id/email", adminOnly, c.emailPayslips);
 router.delete("/payroll/runs/:id", adminOnly, c.deletePayrollRun);
 router.put("/payroll/payslips/:id", adminOnly, c.updatePayslip);
+
+// Exits (admin)
+router.get("/exits", adminOnly, x.listExits);
+router.get("/exits/:userId", adminOnly, x.getExit);
+router.post("/exits/:userId/start", adminOnly, x.startExitRoute);
+router.put("/exits/:userId", adminOnly, x.updateExit);
+router.post("/exits/:userId/handover", adminOnly, x.handoverRoute);
+router.post("/exits/:userId/deactivate", adminOnly, x.deactivateRoute);
+router.post("/exits/:userId/reactivate", adminOnly, x.reactivateRoute);
+router.post("/exits/:userId/settlement", adminOnly, x.draftSettlementRoute);
+router.put("/exits/:userId/settlement", adminOnly, x.updateSettlement);
+router.get("/exits/:userId/settlement/pdf", adminOnly, x.settlementPdf);
+router.get("/exits/:userId/letters/:type", adminOnly, x.letterPdf);
+router.post("/exits/:userId/letters/:type", adminOnly, x.letterPdf);
 
 export default router;

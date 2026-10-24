@@ -34,7 +34,7 @@ export const getDashboard = async (req, res) => {
     const dayStart = localDayStart(todayKey), dayEnd = new Date(dayStart.getTime() + DAY), weekEnd = new Date(dayStart.getTime() + 7 * DAY);
     const ledIds = me?.ledTeamIds || [];
     const teamIds = admin
-      ? (await User.find({}).select("_id").lean()).map((u) => u._id)
+      ? (await User.find({ isActive: { $ne: false } }).select("_id").lean()).map((u) => u._id)
       : ledIds.length
         ? (await User.find({ "teams.team": { $in: ledIds }, _id: { $ne: req.id } }).select("_id").lean()).map((u) => u._id)
         : [];

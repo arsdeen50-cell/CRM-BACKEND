@@ -18,7 +18,8 @@ export const loadCurrentUser = async (req, res, next) => {
       req.currentUser = cached.user;
       return next();
     }
-    const user = await User.findById(req.id).select("fullname email role teams").lean();
+    const user = await User.findById(req.id).select("fullname email role teams isActive").lean();
+    if (user?.isActive === false) return res.status(401).json({ success: false, message: "This account has been deactivated. Please contact HR." });
     if (user) {
       // Team Leads also see the work of everyone in the teams they lead
       const ledTeams = (user.teams || []).filter((t) => t.isLead && t.team);

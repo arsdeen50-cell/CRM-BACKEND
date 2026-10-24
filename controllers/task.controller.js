@@ -335,7 +335,7 @@ export const deleteAdminTask = async (req, res) => {
 /* ---------------------- Get All Users (Admin Only) ---------------------- */
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await User.find({ role: "employee" })
+    const users = await User.find({ role: "employee", isActive: { $ne: false } })
       .select("fullname email role profile")
       .sort({ createdAt: -1 });
 

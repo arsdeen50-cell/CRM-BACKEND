@@ -260,7 +260,7 @@ const ensureProfile = async (userId) => (await EmployeeProfile.findOne({ userId 
 // GET /hr/employees - directory everyone can see (work details only)
 export const getDirectory = async (req, res) => {
   try {
-    const [users, profiles] = await Promise.all([User.find({}).select("fullname email phoneNumber role empId designation teams profile.profilePhoto").sort({ fullname: 1 }).lean(), EmployeeProfile.find({}).select("userId designation employmentType status dateOfJoining reportingManager workLocation").lean()]);
+    const [users, profiles] = await Promise.all([User.find({}).select("fullname email phoneNumber role empId designation teams profile.profilePhoto isActive").sort({ fullname: 1 }).lean(), EmployeeProfile.find({}).select("userId designation employmentType status dateOfJoining reportingManager workLocation").lean()]);
     const byId = new Map(profiles.map((p) => [String(p.userId), p]));
     const nameOf = new Map(users.map((u) => [String(u._id), u.fullname]));
     const people = users.map((u) => {
@@ -281,6 +281,7 @@ export const getDirectory = async (req, res) => {
         workLocation: p.workLocation || "",
         reportingManager: p.reportingManager ? { _id: p.reportingManager, fullname: nameOf.get(String(p.reportingManager)) || "" } : null,
         hasProfile: !!byId.get(String(u._id)),
+        loginActive: u.isActive !== false,
       };
     });
     res.json({ success: true, people, employmentTypes: EMPLOYMENT_TYPES, statuses: EMPLOYEE_STATUSES });
@@ -485,6 +486,7 @@ export const generatePayroll = async (req, res) => {
       const p = profiles.find((x) => String(x.userId) === String(u._id)) || {};
       if (p.status === "Exited" && p.dateOfExit && localMonthKey(p.dateOfExit) < month) { skipped++; continue; }
       if (p.dateOfJoining && new Date(p.dateOfJoining) > monthEnd) { skipped++; continue; }
+      if (p.exit?.settlement?.month && p.exit.settlement.month <= month) { skipped++; continue; } // paid through the full & final settlement
       const s = latest.get(String(u._id));
       const unpaid = await unpaidLeaveDaysInMonth(u._id, month, settings);
       const absent = report ? report.rows.find((r) => String(r.user._id) === String(u._id))?.summary.A || 0 : 0;

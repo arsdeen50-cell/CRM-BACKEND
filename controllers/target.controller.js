@@ -23,7 +23,7 @@ export const getTargets = async (req, res) => {
     const month = /^\d{4}-\d{2}$/.test(req.query.month || "") ? req.query.month : localMonthKey();
     const { start, end } = monthRange(month);
     const [users, targets, leads] = await Promise.all([
-      User.find({}).select("fullname role").lean(),
+      User.find({ isActive: { $ne: false } }).select("fullname role").lean(),
       Target.find({ month }).lean(),
       LeadSource.find({ $or: [{ createdAt: { $gte: start, $lt: end } }, { "activityLog.loggedAt": { $gte: start, $lt: end } }, { "stageHistory.changedAt": { $gte: start, $lt: end } }] })
         .select("createdAt createdBy projectAccountHandledBy teamMember dealValue stageHistory activityLog clientName")

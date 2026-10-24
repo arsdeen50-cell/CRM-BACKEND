@@ -82,6 +82,57 @@ const documentSchema = new mongoose.Schema(
   { _id: true }
 );
 
+export const EXIT_TYPES = ["Resigned", "Terminated", "Absconded", "Contract ended", "Internship completed", "Other"];
+export const DEFAULT_EXIT_CHECKLIST = [
+  { key: "handover", label: "Work handed over (leads, clients, tasks, content reassigned)" },
+  { key: "knowledge", label: "Knowledge transfer done (files, passwords, client context)" },
+  { key: "assets", label: "Company assets returned (laptop, camera, accessories)" },
+  { key: "idcard", label: "ID card, keys and access cards returned" },
+  { key: "clientAccess", label: "Removed from client accounts (Meta Business, Google, Canva, website admin)" },
+  { key: "tools", label: "Company email, Drive, WhatsApp groups and tool logins removed" },
+  { key: "interview", label: "Exit interview done" },
+  { key: "settlement", label: "Full & final settlement paid" },
+  { key: "letters", label: "Relieving and experience letters issued" },
+  { key: "crmAccess", label: "CRM login switched off (automatic on the last working day)" },
+];
+
+const exitSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: EXIT_TYPES, default: "Resigned" },
+    reason: { type: String, default: "" },
+    noticeDate: { type: Date },
+    lastWorkingDay: { type: Date },
+    status: { type: String, enum: ["In progress", "Completed"], default: "In progress" },
+    startedBy: { type: String, default: "" },
+    startedAt: { type: Date, default: Date.now },
+    completedAt: { type: Date },
+    checklist: [{ key: String, label: String, done: { type: Boolean, default: false }, doneBy: String, doneAt: Date, note: String, _id: false }],
+    handover: { toUserId: { type: ObjectId, ref: "User" }, toName: String, at: Date, by: String, counts: Object },
+    interview: { notes: { type: String, default: "" }, rating: { type: Number, min: 0, max: 5 }, wouldRehire: { type: Boolean }, by: String, at: Date },
+    deactivatedAt: { type: Date },
+    // Full & final settlement (an amount paid once, separate from the monthly payroll)
+    settlement: {
+      month: String, // YYYY-MM of the last working day
+      daysInMonth: Number,
+      daysWorked: Number,
+      encashDays: Number,
+      dailyRate: Number,
+      lines: [{ kind: { type: String, enum: ["earning", "deduction"] }, name: String, amount: Number, _id: false }],
+      totalEarnings: Number,
+      totalDeductions: Number,
+      netPayable: Number,
+      status: { type: String, enum: ["Draft", "Final", "Paid"], default: "Draft" },
+      paidAt: Date,
+      paymentRef: String,
+      notes: String,
+      by: String,
+      updatedAt: Date,
+    },
+    letters: [{ type: { type: String }, issuedAt: Date, by: String, emailedTo: String, _id: false }],
+  },
+  { _id: false }
+);
+
 export const EMPLOYMENT_TYPES = ["Full Time", "Part Time", "Internship", "Contract"];
 export const EMPLOYEE_STATUSES = ["Active", "Probation", "Notice Period", "Exited"];
 
@@ -113,6 +164,7 @@ const employeeProfileSchema = new mongoose.Schema(
     esic: { type: String, default: "" },
     documents: { type: [documentSchema], default: [] },
     notes: { type: String, default: "" }, // HR only
+    exit: { type: exitSchema, default: undefined },
   },
   { timestamps: true }
 );

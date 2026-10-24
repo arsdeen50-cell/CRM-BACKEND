@@ -1,4 +1,19 @@
 import jwt from "jsonwebtoken";
+import { User } from "../models/user.model.js";
+
+// Deactivated accounts (people who left) are refused on every request, even with a still-valid token.
+// Cached briefly so this costs at most one small query per user every 30 seconds.
+const activeCache = new Map();
+const ACTIVE_MS = 30 * 1000;
+export const clearActiveCache = (userId) => (userId ? activeCache.delete(String(userId)) : activeCache.clear());
+const isActiveUser = async (userId) => {
+  const hit = activeCache.get(String(userId));
+  if (hit && hit.expires > Date.now()) return hit.active;
+  const u = await User.findById(userId).select("isActive").lean();
+  const active = !!u && u.isActive !== false;
+  activeCache.set(String(userId), { active, expires: Date.now() + ACTIVE_MS });
+  return active;
+};
 
 const isAuthenticated = async (req, res, next) => {
   try {
@@ -32,6 +47,9 @@ const isAuthenticated = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.SECRET_KEY);
+    if (!(await isActiveUser(decoded.userId))) {
+      return res.status(401).json({ success: false, message: "This account has been deactivated. Please contact HR." });
+    }
     req.user = decoded; // Attach the decoded user to the request
      req.id = decoded.userId; 
      req.role = decoded.role;

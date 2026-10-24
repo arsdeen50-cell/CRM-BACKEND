@@ -80,6 +80,9 @@ export const login = async (req, res) => {
       });
     }
 
+    if (user.isActive === false) {
+      return res.status(403).json({ message: "This account has been deactivated. Please contact HR.", success: false });
+    }
     const isPasswordMatch = await bcrypt.compare(password, user.password);
 
     if (!isPasswordMatch) {
@@ -272,7 +275,7 @@ export const sendOtp = async (req, res) => {
     const email = String(req.body?.email || "").trim();
     if (!email) return res.status(400).json({ success: false, message: "Email is required" });
     const user = await findByEmail(email);
-    if (user) {
+    if (user && user.isActive !== false) {
       const otp = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
       user.resetOtp = hashOtp(email, otp);
       user.resetOtpExpiry = Date.now() + OTP_TTL_MS;
