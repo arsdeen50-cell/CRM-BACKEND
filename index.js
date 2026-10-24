@@ -38,6 +38,7 @@ import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
 import { startFollowUpDigest } from "./utils/followupDigest.js";
 import { startSequenceRunner } from "./utils/sequenceRunner.js";
 import { startBillingRunner } from "./utils/billingRunner.js";
+import { startExitRunner } from "./utils/exitService.js";
 import { ensureSalesTeam } from "./utils/salesAccess.js";
 
 /* ================= LOAD ENV ================= */
@@ -154,5 +155,6 @@ app.listen(PORT, async () => {
   startFollowUpDigest();
   startSequenceRunner();
   startBillingRunner();
+  startExitRunner();
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

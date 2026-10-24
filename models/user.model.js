@@ -47,6 +47,9 @@ const userSchema = new mongoose.Schema(
         _id: false,
       },
     ],
+    // Login switch: false once someone has left (set by the exit procedure); history is kept
+    isActive: { type: Boolean, default: true },
+    deactivatedAt: { type: Date },
     // Password reset code: only a hash is stored; it's single-use and locks after too many wrong tries
     resetOtp: String,
     resetOtpExpiry: Date,
