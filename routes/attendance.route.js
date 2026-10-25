@@ -2,10 +2,11 @@ import express from "express";
 import { isAdmin } from "../middlewares/isAdmin.js";
 
 import isAuthenticated from "../middlewares/isAuthentications.js";
-import { deleteAttendance, endBreak, getAllAttendance, getMyAttendance, punchIn, punchOut, startBreak, updateAttendance } from "../controllers/attendance.controller.js";
+import { deleteAttendance, endBreak, getAllAttendance, getMyAttendance, getMyGeofence, punchIn, punchOut, startBreak, updateAttendance } from "../controllers/attendance.controller.js";
 
 const router = express.Router();
 
+router.get("/geofence", isAuthenticated, getMyGeofence);
 router.post("/punch-in", isAuthenticated, punchIn);
 router.post("/punch-out", isAuthenticated, punchOut);
 router.get("/user-all", isAuthenticated, getMyAttendance);

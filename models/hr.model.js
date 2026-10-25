@@ -23,6 +23,15 @@ const hrSettingsSchema = new mongoose.Schema(
     fullDayHours: { type: Number, default: 8 },
     halfDayHours: { type: Number, default: 4 },
     deductAbsentDays: { type: Boolean, default: false }, // payroll: count unexplained absences as loss of pay
+    // Punch-in geofence: punches farther than radiusMeters from the office are flagged ("flag") or refused ("block")
+    geofence: {
+      enabled: { type: Boolean, default: false },
+      mode: { type: String, enum: ["flag", "block"], default: "flag" },
+      name: { type: String, default: "Office" },
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+      radiusMeters: { type: Number, default: 200, min: 25, max: 5000 },
+    },
   },
   { timestamps: true }
 );
@@ -148,6 +157,8 @@ const employeeProfileSchema = new mongoose.Schema(
     dateOfExit: { type: Date },
     reportingManager: { type: ObjectId, ref: "User" },
     workLocation: { type: String, default: "Mumbai" },
+    // Punch-in rule: "office" = geofenced, "wfh" / "field" = can punch from anywhere (location still noted if shared)
+    punchRule: { type: String, enum: ["office", "wfh", "field"], default: "office" },
     // Personal (the employee can edit these)
     dob: { type: Date },
     gender: { type: String, default: "" },

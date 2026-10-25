@@ -52,6 +52,22 @@ export const updateSettings = async (req, res) => {
     for (const k of ["graceMinutes", "fullDayHours", "halfDayHours"]) if (b[k] !== undefined) s[k] = Math.max(0, Number(b[k]) || 0);
     if (/^\d{2}:\d{2}$/.test(b.officeStart || "")) s.officeStart = b.officeStart;
     if (b.deductAbsentDays !== undefined) s.deductAbsentDays = !!b.deductAbsentDays;
+    if (b.geofence && typeof b.geofence === "object") {
+      const g = b.geofence, cur = s.geofence || {};
+      const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+      const lat = g.lat !== undefined ? num(g.lat) : cur.lat, lng = g.lng !== undefined ? num(g.lng) : cur.lng;
+      if ((lat !== null && !(Math.abs(lat) <= 90)) || (lng !== null && !(Math.abs(lng) <= 180))) throw new Error("Enter a valid latitude and longitude");
+      const enabled = g.enabled !== undefined ? !!g.enabled : !!cur.enabled;
+      if (enabled && (lat === null || lng === null)) throw new Error("Set the office location before turning the geofence on");
+      s.geofence = {
+        enabled,
+        mode: ["flag", "block"].includes(g.mode) ? g.mode : cur.mode || "flag",
+        name: g.name !== undefined ? String(g.name).trim().slice(0, 60) || "Office" : cur.name || "Office",
+        lat,
+        lng,
+        radiusMeters: g.radiusMeters !== undefined ? Math.min(5000, Math.max(25, Math.round(Number(g.radiusMeters) || 200))) : cur.radiusMeters || 200,
+      };
+    }
     s.markModified("leaveQuotas");
     await s.save();
     res.json({ success: true, settings: s });
@@ -151,7 +167,7 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
   const rows = users.map((u) => {
     const mine = attendance.filter((a) => String(a.userId) === String(u._id));
     const myLeaves = leaves.filter((l) => String(l.employee) === String(u._id));
-    const summary = { P: 0, HD: 0, SH: 0, MP: 0, A: 0, L: 0, HL: 0, H: 0, WO: 0, late: 0, workedHours: 0, workingDays: 0 };
+    const summary = { P: 0, HD: 0, SH: 0, MP: 0, A: 0, L: 0, HL: 0, H: 0, WO: 0, late: 0, outside: 0, workedHours: 0, workingDays: 0 };
     const cells = days.map((k) => {
       const holiday = holidays.get(k);
       const off = settings.weeklyOffs.includes(weekday(k));
@@ -175,7 +191,10 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
       if (code) summary[code]++;
       if (late && !["H", "WO", "L"].includes(code)) summary.late++;
       summary.workedHours += worked;
-      return { date: k, code, late: late && !["H", "WO", "L"].includes(code), worked: Math.round(worked * 10) / 10, punchIn: rec?.punchIn || null, punchOut: rec?.punchOut || null, holiday: holiday?.name || "", leaveType: leave?.leaveType || "" };
+      // Punch-in made outside the office geofence, or with no location shared while it was on
+      const outside = ["outside", "unknown"].includes(rec?.punchInLocation?.status) ? rec.punchInLocation : null;
+      if (outside) summary.outside++;
+      return { date: k, code, late: late && !["H", "WO", "L"].includes(code), worked: Math.round(worked * 10) / 10, punchIn: rec?.punchIn || null, punchOut: rec?.punchOut || null, holiday: holiday?.name || "", leaveType: leave?.leaveType || "", outside: outside ? { status: outside.status, distance: outside.distance ?? null } : null };
     });
     summary.workedHours = Math.round(summary.workedHours * 10) / 10;
     return { user: u, cells, summary };
@@ -252,7 +271,7 @@ export const decideCorrection = async (req, res) => {
 
 /* ------------------------------ Employee directory + profiles ------------------------------ */
 const PERSONAL_FIELDS = ["dob", "gender", "personalEmail", "personalPhone", "currentAddress", "permanentAddress", "bloodGroup", "emergencyContact"];
-const ADMIN_FIELDS = [...PERSONAL_FIELDS, "designation", "employmentType", "status", "dateOfJoining", "probationEndDate", "dateOfExit", "reportingManager", "workLocation", "bank", "pan", "uan", "esic", "notes"];
+const ADMIN_FIELDS = [...PERSONAL_FIELDS, "designation", "employmentType", "status", "dateOfJoining", "probationEndDate", "dateOfExit", "reportingManager", "workLocation", "punchRule", "bank", "pan", "uan", "esic", "notes"];
 const PRIVATE_FIELDS = ["bank", "pan", "uan", "esic", "notes", "dob", "personalEmail", "personalPhone", "currentAddress", "permanentAddress", "bloodGroup", "emergencyContact", "documents"];
 
 const ensureProfile = async (userId) => (await EmployeeProfile.findOne({ userId })) || EmployeeProfile.create({ userId });
