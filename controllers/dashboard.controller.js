@@ -91,7 +91,7 @@ export const getDashboard = async (req, res) => {
         else if (lv) status = lv.halfDay ? "half-leave" : "leave";
         else if (holidayToday || weeklyOff) status = "off";
         else if (nowMin <= lateAfter) status = "not-yet";
-        return { _id: p._id, fullname: p.fullname, designation: p.designation, status, punchIn: a?.punchIn || null, late: !!a && localMinutes(a.punchIn) > lateAfter, leaveType: lv?.leaveType || "" };
+        return { _id: p._id, fullname: p.fullname, designation: p.designation, status, punchIn: a?.punchIn || null, late: !!a && localMinutes(a.punchIn) > lateAfter, outside: ["outside", "unknown"].includes(a?.punchInLocation?.status) ? a.punchInLocation.status : "", leaveType: lv?.leaveType || "" };
       });
       // Birthdays and work anniversaries in the next 7 days (month-day match)
       const md = (d) => new Date(new Date(d).getTime() + TZ_OFFSET_MIN * 60000).toISOString().slice(5, 10);
@@ -110,7 +110,7 @@ export const getDashboard = async (req, res) => {
       team = {
         scope: admin ? "everyone" : "your team",
         dayOff: holidayToday ? holidayToday.name : weeklyOff ? "Weekly off" : "",
-        counts: { total: rows.length, in: count(["in", "break", "left"]), late: rows.filter((r) => r.late).length, leave: count(["leave", "half-leave"]), notIn: count("not-in"), notYet: count("not-yet") },
+        counts: { total: rows.length, in: count(["in", "break", "left"]), late: rows.filter((r) => r.late).length, outside: rows.filter((r) => r.outside).length, leave: count(["leave", "half-leave"]), notIn: count("not-in"), notYet: count("not-yet") },
         people: rows,
         upcomingLeave: upcoming.map((l) => ({ name: l.employee?.fullname, leaveType: l.leaveType, startDate: l.startDate, endDate: l.endDate, days: l.days })),
         celebrations: celebrations.sort((a, b) => a.inDays - b.inDays),

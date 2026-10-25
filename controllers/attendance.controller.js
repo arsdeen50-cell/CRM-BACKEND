@@ -1,5 +1,17 @@
 import { Attendance } from "../models/attendance.modal.js";
 import { User } from "../models/user.model.js";
+import { checkPunch, geofenceFor } from "../utils/geofence.js";
+
+// GET /attendance/geofence - whether the punch button should ask for the device location
+export const getMyGeofence = async (req, res) => {
+  try {
+    const g = await geofenceFor(req.id);
+    res.json({ success: true, enabled: g.enabled, mode: g.mode, name: g.name, radiusMeters: g.radiusMeters, punchRule: g.punchRule });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 // Record punch in
 export const punchIn = async (req, res) => {
@@ -23,9 +35,13 @@ export const punchIn = async (req, res) => {
       return res.status(400).json({ msg: "You have already punched in today" });
     }
 
+    const check = await checkPunch(req.id, req.body, { isPunchIn: true });
+    if (check.error) return res.status(403).json({ msg: check.error, message: check.error, geofence: true });
+
     const attendance = new Attendance({
       userId: req.id,
       punchIn: new Date(),
+      punchInLocation: check.location,
     });
 
     await attendance.save();
@@ -61,7 +77,10 @@ export const punchOut = async (req, res) => {
         .json({ msg: "No active punch-in found for today" });
     }
 
+    // Punch-out is never refused (that would leave a missed punch-out); an out-of-office punch-out is only flagged
+    const check = await checkPunch(req.id, req.body, { isPunchIn: false });
     attendance.punchOut = new Date();
+    if (check.location) attendance.punchOutLocation = check.location;
     await attendance.save();
     res.json(attendance);
   } catch (err) {
