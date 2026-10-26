@@ -7,7 +7,8 @@ import { loadCurrentUser, adminOnly } from "../utils/access.js";
 
 /* Only mounted when DEMO_MODE=true: lets the demo admin refill the sample data before a demo. */
 const router = express.Router();
-const seed = path.join(path.dirname(fileURLToPath(import.meta.url)), "../scripts/demo-seed.mjs");
+// DEMO_SEED picks the sample data set: "agency" (default) or "logistics"
+const seed = path.join(path.dirname(fileURLToPath(import.meta.url)), `../scripts/${process.env.DEMO_SEED === "logistics" ? "demo-seed-logistics" : "demo-seed"}.mjs`);
 let running = false;
 
 router.post("/reset", isAuthenticated, loadCurrentUser, adminOnly, (req, res) => {

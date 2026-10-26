@@ -201,7 +201,8 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
       else if (off) code = "WO";
       else if (leave && !leave.halfDay) code = "L";
       else if (rec) {
-        if (!rec.punchOut) code = k < todayKey ? "MP" : "P";
+        // No punch-out yet: still on shift if it started in the last 20 hours (overnight shifts end the next day)
+        if (!rec.punchOut) code = k < todayKey && Date.now() - new Date(rec.punchIn) > 20 * 3600000 ? "MP" : "P";
         else if (worked >= shift.fullDayHours) code = "P";
         else if (worked >= shift.halfDayHours) code = "HD";
         else code = "SH";
