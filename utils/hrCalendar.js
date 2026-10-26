@@ -8,6 +8,15 @@ export const getHrSettings = async () => {
   return s;
 };
 
+// The working hours that apply to someone: their shift, or the Regular office timing when they have none
+export const shiftOf = (settings, shiftId) => {
+  const s = shiftId && (settings.shifts || []).find((x) => String(x._id) === String(shiftId));
+  const base = { graceMinutes: settings.graceMinutes || 0 };
+  return s
+    ? { ...base, id: String(s._id), name: s.name, start: s.start, fullDayHours: s.fullDayHours, halfDayHours: s.halfDayHours }
+    : { ...base, id: "", name: "Regular", start: settings.officeStart, fullDayHours: settings.fullDayHours, halfDayHours: settings.halfDayHours };
+};
+
 const DAY = 86400000;
 const dayKeyToDate = (k) => new Date(`${k}T00:00:00Z`);
 export const dayKeysBetween = (fromKey, toKey) => {

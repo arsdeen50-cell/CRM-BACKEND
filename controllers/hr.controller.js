@@ -8,7 +8,7 @@ import { User } from "../models/user.model.js";
 import { Leave } from "../models/leave.model.js";
 import { Attendance } from "../models/attendance.modal.js";
 import { GoOnBoarding } from "../models/GoOnBoarding.model.js";
-import { getHrSettings, leaveBalance, monthKeys, weekday, holidayMap, localDayStart, dayKeysBetween, countLeaveDays } from "../utils/hrCalendar.js";
+import { getHrSettings, shiftOf, leaveBalance, monthKeys, weekday, holidayMap, localDayStart, dayKeysBetween, countLeaveDays } from "../utils/hrCalendar.js";
 import { localDayKey, localMonthKey, TZ_OFFSET_MIN } from "../utils/config.js";
 import { displayName } from "../utils/access.js";
 import { logAudit } from "../utils/audit.js";
@@ -52,6 +52,25 @@ export const updateSettings = async (req, res) => {
     for (const k of ["graceMinutes", "fullDayHours", "halfDayHours"]) if (b[k] !== undefined) s[k] = Math.max(0, Number(b[k]) || 0);
     if (/^\d{2}:\d{2}$/.test(b.officeStart || "")) s.officeStart = b.officeStart;
     if (b.deductAbsentDays !== undefined) s.deductAbsentDays = !!b.deductAbsentDays;
+    if (Array.isArray(b.shifts)) {
+      const shifts = b.shifts.map((x) => {
+        const name = String(x.name || "").trim().slice(0, 40);
+        if (!name) throw new Error("Give every shift a name");
+        if (!/^\d{2}:\d{2}$/.test(x.start || "")) throw new Error(`Set a start time for the ${name} shift`);
+        const full = Math.max(0, Number(x.fullDayHours) || 0), half = Math.max(0, Number(x.halfDayHours) || 0);
+        if (!full || half > full) throw new Error(`${name}: full day must be more than 0 hours and at least the half day`);
+        return { ...(mongoose.Types.ObjectId.isValid(x._id) && { _id: x._id }), name, start: x.start, fullDayHours: full, halfDayHours: half };
+      });
+      if (new Set(shifts.map((x) => x.name.toLowerCase())).size !== shifts.length) throw new Error("Shift names must be different");
+      // Don't drop a shift that people are still on
+      const kept = new Set(shifts.filter((x) => x._id).map((x) => String(x._id)));
+      const removed = (s.shifts || []).filter((x) => !kept.has(String(x._id)));
+      for (const r of removed) {
+        const n = await EmployeeProfile.countDocuments({ shiftId: r._id });
+        if (n) throw new Error(`${n} ${n === 1 ? "person is" : "people are"} on the ${r.name} shift - move them to another shift first`);
+      }
+      s.shifts = shifts;
+    }
     if (b.geofence && typeof b.geofence === "object") {
       const g = b.geofence, cur = s.geofence || {};
       const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
@@ -158,13 +177,15 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
   const from = localDayStart(days[0]), to = new Date(localDayStart(days[days.length - 1]).getTime() + DAY);
   const users = await User.find(userFilter).select("fullname email empId role").sort({ fullname: 1 }).lean();
   const ids = users.map((u) => u._id);
-  const [attendance, leaves, holidays] = await Promise.all([
+  const [attendance, leaves, holidays, profiles] = await Promise.all([
     Attendance.find({ userId: { $in: ids }, punchIn: { $gte: from, $lt: to } }).lean(),
     Leave.find({ employee: { $in: ids }, status: "Approved", startDate: { $lt: to }, endDate: { $gte: from } }).lean(),
     holidayMap(days[0], days[days.length - 1]),
+    EmployeeProfile.find({ userId: { $in: ids } }).select("userId shiftId").lean(),
   ]);
-  const startMin = hhmmToMinutes(settings.officeStart) + (settings.graceMinutes || 0);
   const rows = users.map((u) => {
+    const shift = shiftOf(settings, profiles.find((p) => String(p.userId) === String(u._id))?.shiftId);
+    const startMin = hhmmToMinutes(shift.start) + (shift.graceMinutes || 0);
     const mine = attendance.filter((a) => String(a.userId) === String(u._id));
     const myLeaves = leaves.filter((l) => String(l.employee) === String(u._id));
     const summary = { P: 0, HD: 0, SH: 0, MP: 0, A: 0, L: 0, HL: 0, H: 0, WO: 0, late: 0, outside: 0, workedHours: 0, workingDays: 0 };
@@ -181,8 +202,8 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
       else if (leave && !leave.halfDay) code = "L";
       else if (rec) {
         if (!rec.punchOut) code = k < todayKey ? "MP" : "P";
-        else if (worked >= settings.fullDayHours) code = "P";
-        else if (worked >= settings.halfDayHours) code = "HD";
+        else if (worked >= shift.fullDayHours) code = "P";
+        else if (worked >= shift.halfDayHours) code = "HD";
         else code = "SH";
         if (leave?.halfDay) code = "HL";
       } else if (leave?.halfDay) code = "HL";
@@ -197,7 +218,7 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
       return { date: k, code, late: late && !["H", "WO", "L"].includes(code), worked: Math.round(worked * 10) / 10, punchIn: rec?.punchIn || null, punchOut: rec?.punchOut || null, holiday: holiday?.name || "", leaveType: leave?.leaveType || "", outside: outside ? { status: outside.status, distance: outside.distance ?? null } : null };
     });
     summary.workedHours = Math.round(summary.workedHours * 10) / 10;
-    return { user: u, cells, summary };
+    return { user: u, shift: { name: shift.name, start: shift.start, fullDayHours: shift.fullDayHours }, cells, summary };
   });
   return { month, days, rows, settings: { officeStart: settings.officeStart, graceMinutes: settings.graceMinutes, fullDayHours: settings.fullDayHours, halfDayHours: settings.halfDayHours, weeklyOffs: settings.weeklyOffs } };
 };
@@ -271,7 +292,7 @@ export const decideCorrection = async (req, res) => {
 
 /* ------------------------------ Employee directory + profiles ------------------------------ */
 const PERSONAL_FIELDS = ["dob", "gender", "personalEmail", "personalPhone", "currentAddress", "permanentAddress", "bloodGroup", "emergencyContact"];
-const ADMIN_FIELDS = [...PERSONAL_FIELDS, "designation", "employmentType", "status", "dateOfJoining", "probationEndDate", "dateOfExit", "reportingManager", "workLocation", "punchRule", "bank", "pan", "uan", "esic", "notes"];
+const ADMIN_FIELDS = [...PERSONAL_FIELDS, "designation", "employmentType", "status", "dateOfJoining", "probationEndDate", "dateOfExit", "reportingManager", "workLocation", "punchRule", "shiftId", "bank", "pan", "uan", "esic", "notes"];
 const PRIVATE_FIELDS = ["bank", "pan", "uan", "esic", "notes", "dob", "personalEmail", "personalPhone", "currentAddress", "permanentAddress", "bloodGroup", "emergencyContact", "documents"];
 
 const ensureProfile = async (userId) => (await EmployeeProfile.findOne({ userId })) || EmployeeProfile.create({ userId });
@@ -336,6 +357,10 @@ export const updateEmployee = async (req, res) => {
     const allowed = isAdmin(req) ? ADMIN_FIELDS : PERSONAL_FIELDS;
     const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
     if (patch.reportingManager === "") patch.reportingManager = null;
+    if (patch.shiftId !== undefined) {
+      if (!patch.shiftId) patch.shiftId = null;
+      else if (!(await getHrSettings()).shifts.some((x) => String(x._id) === String(patch.shiftId))) return res.status(400).json({ success: false, message: "That shift doesn't exist" });
+    }
     for (const k of ["dob", "dateOfJoining", "probationEndDate", "dateOfExit"]) if (patch[k] === "") patch[k] = null;
     const profile = await ensureProfile(userId);
     Object.assign(profile, patch);

@@ -22,6 +22,18 @@ const hrSettingsSchema = new mongoose.Schema(
     graceMinutes: { type: Number, default: 15 },
     fullDayHours: { type: Number, default: 8 },
     halfDayHours: { type: Number, default: 4 },
+    // Extra shifts (e.g. interns 14:00-20:00). The fields above are the default "Regular" shift; people without a shift use it.
+    shifts: {
+      type: [
+        new mongoose.Schema({
+          name: { type: String, required: true, trim: true },
+          start: { type: String, required: true, match: /^\d{2}:\d{2}$/ }, // HH:mm, business time zone
+          fullDayHours: { type: Number, default: 8, min: 0 },
+          halfDayHours: { type: Number, default: 4, min: 0 },
+        }),
+      ],
+      default: [],
+    },
     deductAbsentDays: { type: Boolean, default: false }, // payroll: count unexplained absences as loss of pay
     // Punch-in geofence: punches farther than radiusMeters from the office are flagged ("flag") or refused ("block")
     geofence: {
@@ -159,6 +171,7 @@ const employeeProfileSchema = new mongoose.Schema(
     workLocation: { type: String, default: "Mumbai" },
     // Punch-in rule: "office" = geofenced, "wfh" / "field" = can punch from anywhere (location still noted if shared)
     punchRule: { type: String, enum: ["office", "wfh", "field"], default: "office" },
+    shiftId: { type: ObjectId, default: null }, // one of HrSettings.shifts; null = the Regular shift
     // Personal (the employee can edit these)
     dob: { type: Date },
     gender: { type: String, default: "" },
