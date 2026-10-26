@@ -32,6 +32,7 @@ import publicRoute from "./routes/public.route.js";
 import teamRoute from "./routes/team.route.js";
 import hrRoute from "./routes/hr.route.js";
 import dashboardRoute from "./routes/dashboard.route.js";
+import demoRoute from "./routes/demo.route.js";
 import { backfillLeaveDays } from "./controllers/hr.controller.js";
 import { scrubSignupPasswords } from "./controllers/goOnBoarding.controller.js";
 import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
@@ -135,6 +136,8 @@ app.use("/api/v1/public", publicRoute);
 app.use("/api/v1/team", teamRoute);
 app.use("/api/v1/hr", hrRoute);
 app.use("/api/v1/dashboard", dashboardRoute);
+// Demo copies only (DEMO_MODE=true): admin can refill the sample data
+if (process.env.DEMO_MODE === "true") app.use("/api/v1/demo", demoRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error(err.stack);
