@@ -9,7 +9,7 @@ import { Invoice } from "../models/invoice.model.js";
 import { Retainer } from "../models/retainer.model.js";
 import { AttendanceCorrection, EmployeeProfile, Holiday } from "../models/hr.model.js";
 import { leadScopeFilter, escapeRegex } from "../utils/access.js";
-import { getHrSettings, localDayStart } from "../utils/hrCalendar.js";
+import { getHrSettings, localDayStart, shiftOf } from "../utils/hrCalendar.js";
 import { localDayKey, localMonthKey, monthRange, TZ_OFFSET_MIN } from "../utils/config.js";
 
 const DAY = 86400000;
@@ -69,14 +69,13 @@ export const getDashboard = async (req, res) => {
     let team = null;
     if (teamIds.length) {
       const settings = await getHrSettings();
-      const lateAfter = hhmm(settings.officeStart) + (settings.graceMinutes || 0);
       const nowMin = localMinutes(new Date());
       const [people, attendance, onLeave, upcoming, profiles, holidays] = await Promise.all([
         User.find({ _id: { $in: teamIds } }).select("fullname designation role").sort({ fullname: 1 }).lean(),
         Attendance.find({ userId: { $in: teamIds }, punchIn: { $gte: dayStart, $lt: dayEnd } }).lean(),
         Leave.find({ employee: { $in: teamIds }, status: "Approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }).lean(),
         Leave.find({ employee: { $in: teamIds }, status: "Approved", startDate: { $gte: dayEnd, $lt: weekEnd } }).populate("employee", "fullname").sort({ startDate: 1 }).lean(),
-        EmployeeProfile.find({ userId: { $in: teamIds } }).select("userId dob dateOfJoining status").lean(),
+        EmployeeProfile.find({ userId: { $in: teamIds } }).select("userId dob dateOfJoining status shiftId").lean(),
         Holiday.find({ date: { $gte: todayKey } }).sort({ date: 1 }).limit(3).lean(),
       ]);
       const weeklyOff = settings.weeklyOffs.includes(new Date(`${todayKey}T00:00:00Z`).getUTCDay());
@@ -86,12 +85,14 @@ export const getDashboard = async (req, res) => {
         const a = attendance.find((x) => String(x.userId) === String(p._id));
         const lv = onLeave.find((x) => String(x.employee) === String(p._id));
         const onBreak = a?.breaks?.length && !a.breaks[a.breaks.length - 1].breakEnd;
+        const shift = shiftOf(settings, profiles.find((x) => String(x.userId) === String(p._id))?.shiftId);
+        const lateAfter = hhmm(shift.start) + (shift.graceMinutes || 0);
         let status = "not-in";
         if (a) status = a.punchOut ? "left" : onBreak ? "break" : "in";
         else if (lv) status = lv.halfDay ? "half-leave" : "leave";
         else if (holidayToday || weeklyOff) status = "off";
         else if (nowMin <= lateAfter) status = "not-yet";
-        return { _id: p._id, fullname: p.fullname, designation: p.designation, status, punchIn: a?.punchIn || null, late: !!a && localMinutes(a.punchIn) > lateAfter, outside: ["outside", "unknown"].includes(a?.punchInLocation?.status) ? a.punchInLocation.status : "", leaveType: lv?.leaveType || "" };
+        return { _id: p._id, fullname: p.fullname, designation: p.designation, status, shift: shift.id ? shift.name : "", punchIn: a?.punchIn || null, late: !!a && localMinutes(a.punchIn) > lateAfter, outside: ["outside", "unknown"].includes(a?.punchInLocation?.status) ? a.punchInLocation.status : "", leaveType: lv?.leaveType || "" };
       });
       // Birthdays and work anniversaries in the next 7 days (month-day match)
       const md = (d) => new Date(new Date(d).getTime() + TZ_OFFSET_MIN * 60000).toISOString().slice(5, 10);
