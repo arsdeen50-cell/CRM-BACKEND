@@ -2,7 +2,8 @@
    WIPES the database first, so it refuses to run unless DEMO_MODE=true and the database name contains "demo".
 
    Usage (on the demo backend, with it running):  node scripts/demo-seed.mjs
-   Reads MONGO_URL, SECRET_KEY, PORT and DEMO_PASSWORD from .env. Every demo login uses DEMO_PASSWORD. */
+   Reads MONGO_URL, SECRET_KEY, PORT and DEMO_PASSWORD from .env. The three demo logins can have their own passwords
+   (DEMO_PASSWORD_ADMIN / _EMPLOYEE / _INTERN); everyone else, and any login without one, uses DEMO_PASSWORD. */
 import "dotenv/config";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
@@ -30,7 +31,9 @@ const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const r = rnd(42);
 
 /* ---------- people ---------- */
-const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
+const LOGIN_PASSWORD = { admin: process.env.DEMO_PASSWORD_ADMIN, neha: process.env.DEMO_PASSWORD_EMPLOYEE, tara: process.env.DEMO_PASSWORD_INTERN };
+const defaultHash = await bcrypt.hash(DEMO_PASSWORD, 10);
+const hashFor = async (key) => (LOGIN_PASSWORD[key] ? bcrypt.hash(LOGIN_PASSWORD[key], 10) : defaultHash);
 const PEOPLE = [
   { key: "admin", fullname: "Aisha Verma", email: "admin@demo.example.com", role: "admin", designation: "Founder & CEO", empId: "DEMO-001" },
   { key: "rohan", fullname: "Rohan Mehta", email: "rohan@demo.example.com", designation: "Account Manager", empId: "DEMO-002", team: "Sales Team", subRole: "Account Manager", lead: true },
@@ -42,7 +45,7 @@ const PEOPLE = [
 ];
 const ids = {};
 for (const [i, p] of PEOPLE.entries()) {
-  ids[p.key] = (await db.collection("users").insertOne({ fullname: p.fullname, email: p.email, role: p.role || "employee", designation: p.designation, empId: p.empId, password: hash, phoneNumber: 9000000001 + i, profile: { profilePhoto: "" }, teams: [], isActive: true, createdAt: new Date(), updatedAt: new Date() })).insertedId;
+  ids[p.key] = (await db.collection("users").insertOne({ fullname: p.fullname, email: p.email, role: p.role || "employee", designation: p.designation, empId: p.empId, password: await hashFor(p.key), phoneNumber: 9000000001 + i, profile: { profilePhoto: "" }, teams: [], isActive: true, createdAt: new Date(), updatedAt: new Date() })).insertedId;
 }
 const T = Object.fromEntries(Object.entries(ids).map(([k, id]) => [k, jwt.sign({ userId: id, role: k === "admin" ? "admin" : "employee" }, SECRET_KEY)]));
 const call = async (who, method, path, body) => {
@@ -210,5 +213,5 @@ for (const [who, brand, d, minutes, description] of [
 ]) await call(who, "POST", "/time", { date: at(d, 12).toISOString(), minutes, clientId: leads[brand].clientId, clientName: brand, projectId: projects[brand]?._id, description, billable: true });
 
 console.log(`Demo data ready: ${PEOPLE.length} people, ${LEADS.length} leads, ${CONTENT.length} content items, ${TASKS.length} tasks, ${att.length} attendance records`);
-console.log("Logins: admin@demo.example.com (admin), employee@demo.example.com (employee), intern@demo.example.com (intern) - password = DEMO_PASSWORD");
+console.log("Logins: admin@demo.example.com, employee@demo.example.com, intern@demo.example.com - passwords are in DEMO_LOGINS.txt");
 await mongoose.disconnect();
