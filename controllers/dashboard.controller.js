@@ -72,7 +72,8 @@ export const getDashboard = async (req, res) => {
       const nowMin = localMinutes(new Date());
       const [people, attendance, onLeave, upcoming, profiles, holidays] = await Promise.all([
         User.find({ _id: { $in: teamIds } }).select("fullname designation role").sort({ fullname: 1 }).lean(),
-        Attendance.find({ userId: { $in: teamIds }, punchIn: { $gte: dayStart, $lt: dayEnd } }).lean(),
+        // Today's punches, plus overnight shifts that started yesterday and are still open
+        Attendance.find({ userId: { $in: teamIds }, $or: [{ punchIn: { $gte: dayStart, $lt: dayEnd } }, { punchOut: null, punchIn: { $gte: new Date(Date.now() - 20 * 3600000) } }] }).sort({ punchIn: -1 }).lean(),
         Leave.find({ employee: { $in: teamIds }, status: "Approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }).lean(),
         Leave.find({ employee: { $in: teamIds }, status: "Approved", startDate: { $gte: dayEnd, $lt: weekEnd } }).populate("employee", "fullname").sort({ startDate: 1 }).lean(),
         EmployeeProfile.find({ userId: { $in: teamIds } }).select("userId dob dateOfJoining status shiftId").lean(),
@@ -82,7 +83,8 @@ export const getDashboard = async (req, res) => {
       const holidayToday = holidays.find((h) => h.date === todayKey && !h.optional);
       const exited = new Set(profiles.filter((p) => p.status === "Exited").map((p) => String(p.userId)));
       const rows = people.filter((p) => !exited.has(String(p._id))).map((p) => {
-        const a = attendance.find((x) => String(x.userId) === String(p._id));
+        const mine = attendance.filter((x) => String(x.userId) === String(p._id));
+        const a = mine.find((x) => !x.punchOut) || mine[0];
         const lv = onLeave.find((x) => String(x.employee) === String(p._id));
         const onBreak = a?.breaks?.length && !a.breaks[a.breaks.length - 1].breakEnd;
         const shift = shiftOf(settings, profiles.find((x) => String(x.userId) === String(p._id))?.shiftId);

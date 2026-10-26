@@ -1,6 +1,15 @@
 import { Attendance } from "../models/attendance.modal.js";
 import { User } from "../models/user.model.js";
 import { checkPunch, geofenceFor } from "../utils/geofence.js";
+import { localDayKey } from "../utils/config.js";
+import { localDayStart } from "../utils/hrCalendar.js";
+
+const DAY = 24 * 60 * 60 * 1000;
+// Longest a shift can stay open. Overnight shifts (e.g. 18:30 -> 03:30) end on the next calendar day, so the open
+// session is found by time since punch-in, not by "today".
+const MAX_SHIFT_MS = 20 * 60 * 60 * 1000;
+const openSession = (userId) =>
+  Attendance.findOne({ userId, punchOut: null, punchIn: { $gte: new Date(Date.now() - MAX_SHIFT_MS) } }).sort({ punchIn: -1 });
 
 // GET /attendance/geofence - whether the punch button should ask for the device location
 export const getMyGeofence = async (req, res) => {
@@ -20,18 +29,12 @@ export const punchIn = async (req, res) => {
       return res.status(401).json({ msg: "User not authenticated" });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const existingAttendance = await Attendance.findOne({
-      userId: req.id,
-      punchIn: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
-      },
-    });
-
-    if (existingAttendance) {
+    if (await openSession(req.id)) {
+      return res.status(400).json({ msg: "You're already punched in - punch out first" });
+    }
+    // One shift per business day (the day the shift starts on, in the CRM's time zone)
+    const dayStart = localDayStart(localDayKey());
+    if (await Attendance.exists({ userId: req.id, punchIn: { $gte: dayStart, $lt: new Date(dayStart.getTime() + DAY) } })) {
       return res.status(400).json({ msg: "You have already punched in today" });
     }
 
@@ -59,22 +62,12 @@ export const punchOut = async (req, res) => {
       return res.status(401).json({ msg: "User not authenticated" });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const attendance = await Attendance.findOne({
-      userId: req.id,
-      punchIn: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
-      },
-      punchOut: { $exists: false },
-    });
+    const attendance = await openSession(req.id);
 
     if (!attendance) {
       return res
         .status(400)
-        .json({ msg: "No active punch-in found for today" });
+        .json({ msg: "No active punch-in found" });
     }
 
     // Punch-out is never refused (that would leave a missed punch-out); an out-of-office punch-out is only flagged
@@ -197,14 +190,7 @@ export const deleteAttendance = async (req, res) => {
 
 export const startBreak = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const attendance = await Attendance.findOne({
-      userId: req.id,
-      punchIn: { $gte: today },
-      punchOut: { $exists: false },
-    });
+    const attendance = await openSession(req.id);
 
     if (!attendance) {
       return res.status(400).json({ msg: "No active session" });
@@ -226,14 +212,7 @@ export const startBreak = async (req, res) => {
 
 export const endBreak = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const attendance = await Attendance.findOne({
-      userId: req.id,
-      punchIn: { $gte: today },
-      punchOut: { $exists: false },
-    });
+    const attendance = await openSession(req.id);
 
     if (!attendance) {
       return res.status(400).json({ msg: "No active session" });
