@@ -11,6 +11,8 @@ const cleanRoles = (roles) => [...new Set((Array.isArray(roles) ? roles : String
 // Creates the starting teams the first time anyone opens the team list
 const ensureDefaults = async () => {
   await ensureSalesTeam().catch((e) => console.error("Sales team setup failed:", e.message));
+  // A client's copy starts with just the Sales team; they add their own (SKIP_DEFAULT_TEAMS=true)
+  if (process.env.SKIP_DEFAULT_TEAMS === "true") return;
   const existing = new Set((await Team.find().select("name").lean()).map((t) => t.name));
   if (existing.size > 1) return;
   const missing = DEFAULT_TEAMS.filter((t) => !existing.has(t.name));

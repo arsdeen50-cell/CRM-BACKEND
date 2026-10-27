@@ -72,10 +72,12 @@ export const login = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    // The login box takes an email or a username
+    const id = String(email).trim();
+    const user = await User.findOne(id.includes("@") ? { email: id } : { username: id.toLowerCase() });
     if (!user) {
       return res.status(400).json({
-        message: "Incorrect email or password.",
+        message: "Incorrect email/username or password.",
         success: false,
       });
     }
@@ -87,7 +89,7 @@ export const login = async (req, res) => {
 
     if (!isPasswordMatch) {
       return res.status(400).json({
-        message: "Incorrect email or password.",
+        message: "Incorrect email/username or password.",
         success: false,
       });
     }
