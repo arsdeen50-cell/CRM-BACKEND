@@ -21,6 +21,10 @@ router.get("/leave-balances", c.getLeaveBalances);
 router.get("/leave-adjustments", adminOnly, c.getLeaveAdjustments);
 router.post("/leave-adjustments", adminOnly, c.addLeaveAdjustment);
 
+// Shift roster (admins and Team Leads)
+router.get("/roster", c.getRoster);
+router.put("/roster", c.setRoster);
+router.post("/roster/copy-week", c.copyRosterWeek);
 // Attendance report and corrections
 router.get("/attendance-report", c.getAttendanceReport);
 router.get("/corrections", c.getCorrections);

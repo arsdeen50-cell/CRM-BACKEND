@@ -3,12 +3,12 @@ import path from "path";
 import crypto from "crypto";
 import mongoose from "mongoose";
 import { fileURLToPath } from "url";
-import { HrSettings, Holiday, LeaveAdjustment, AttendanceCorrection, EmployeeProfile, SalaryStructure, PayrollRun, Payslip, LEAVE_TYPES, EMPLOYMENT_TYPES, EMPLOYEE_STATUSES } from "../models/hr.model.js";
+import { HrSettings, Holiday, LeaveAdjustment, AttendanceCorrection, EmployeeProfile, ShiftRoster, SalaryStructure, PayrollRun, Payslip, LEAVE_TYPES, EMPLOYMENT_TYPES, EMPLOYEE_STATUSES } from "../models/hr.model.js";
 import { User } from "../models/user.model.js";
 import { Leave } from "../models/leave.model.js";
 import { Attendance } from "../models/attendance.modal.js";
 import { GoOnBoarding } from "../models/GoOnBoarding.model.js";
-import { getHrSettings, shiftOf, leaveBalance, monthKeys, weekday, holidayMap, localDayStart, dayKeysBetween, countLeaveDays } from "../utils/hrCalendar.js";
+import { getHrSettings, shiftOf, shiftResolver, shiftStartMin, fmtMin, validTimeZone, leaveBalance, monthKeys, weekday, holidayMap, localDayStart, dayKeysBetween, countLeaveDays } from "../utils/hrCalendar.js";
 import { localDayKey, localMonthKey, TZ_OFFSET_MIN } from "../utils/config.js";
 import { displayName } from "../utils/access.js";
 import { logAudit } from "../utils/audit.js";
@@ -59,7 +59,9 @@ export const updateSettings = async (req, res) => {
         if (!/^\d{2}:\d{2}$/.test(x.start || "")) throw new Error(`Set a start time for the ${name} shift`);
         const full = Math.max(0, Number(x.fullDayHours) || 0), half = Math.max(0, Number(x.halfDayHours) || 0);
         if (!full || half > full) throw new Error(`${name}: full day must be more than 0 hours and at least the half day`);
-        return { ...(mongoose.Types.ObjectId.isValid(x._id) && { _id: x._id }), name, start: x.start, fullDayHours: full, halfDayHours: half };
+        const timeZone = String(x.timeZone || "").trim();
+        if (timeZone && !validTimeZone(timeZone)) throw new Error(`${name}: unknown time zone "${timeZone}"`);
+        return { ...(mongoose.Types.ObjectId.isValid(x._id) && { _id: x._id }), name, start: x.start, timeZone, fullDayHours: full, halfDayHours: half };
       });
       if (new Set(shifts.map((x) => x.name.toLowerCase())).size !== shifts.length) throw new Error("Shift names must be different");
       // Don't drop a shift that people are still on
@@ -183,15 +185,19 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
     holidayMap(days[0], days[days.length - 1]),
     EmployeeProfile.find({ userId: { $in: ids } }).select("userId shiftId").lean(),
   ]);
+  // Each day's shift: the roster entry if the Team Lead planned one, else the shift on the profile
+  const shiftOn = await shiftResolver(settings, users.map((u) => ({ userId: u._id, shiftId: profiles.find((p) => String(p.userId) === String(u._id))?.shiftId })), days[0], days[days.length - 1]);
   const rows = users.map((u) => {
     const shift = shiftOf(settings, profiles.find((p) => String(p.userId) === String(u._id))?.shiftId);
-    const startMin = hhmmToMinutes(shift.start) + (shift.graceMinutes || 0);
     const mine = attendance.filter((a) => String(a.userId) === String(u._id));
     const myLeaves = leaves.filter((l) => String(l.employee) === String(u._id));
     const summary = { P: 0, HD: 0, SH: 0, MP: 0, A: 0, L: 0, HL: 0, H: 0, WO: 0, late: 0, outside: 0, workedHours: 0, workingDays: 0 };
     const cells = days.map((k) => {
       const holiday = holidays.get(k);
-      const off = settings.weeklyOffs.includes(weekday(k));
+      const dayShift = shiftOn(u._id, k);
+      // A rostered day decides on its own whether it's off; otherwise the weekly offs apply
+      const off = dayShift.rostered ? dayShift.off : settings.weeklyOffs.includes(weekday(k));
+      const startMin = shiftStartMin(dayShift, k) + (dayShift.graceMinutes || 0);
       const rec = mine.find((a) => localDayKey(a.punchIn) === k);
       const leave = myLeaves.find((l) => localDayKey(l.startDate) <= k && localDayKey(l.endDate) >= k);
       const worked = rec?.punchOut ? Math.max(0, (new Date(rec.punchOut) - new Date(rec.punchIn)) / 3600000 - (rec.totalBreakTime || 0) / 3600) : 0;
@@ -203,8 +209,8 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
       else if (rec) {
         // No punch-out yet: still on shift if it started in the last 20 hours (overnight shifts end the next day)
         if (!rec.punchOut) code = k < todayKey && Date.now() - new Date(rec.punchIn) > 20 * 3600000 ? "MP" : "P";
-        else if (worked >= shift.fullDayHours) code = "P";
-        else if (worked >= shift.halfDayHours) code = "HD";
+        else if (worked >= dayShift.fullDayHours) code = "P";
+        else if (worked >= dayShift.halfDayHours) code = "HD";
         else code = "SH";
         if (leave?.halfDay) code = "HL";
       } else if (leave?.halfDay) code = "HL";
@@ -216,10 +222,10 @@ export const buildAttendanceReport = async (month, userFilter = {}) => {
       // Punch-in made outside the office geofence, or with no location shared while it was on
       const outside = ["outside", "unknown"].includes(rec?.punchInLocation?.status) ? rec.punchInLocation : null;
       if (outside) summary.outside++;
-      return { date: k, code, late: late && !["H", "WO", "L"].includes(code), worked: Math.round(worked * 10) / 10, punchIn: rec?.punchIn || null, punchOut: rec?.punchOut || null, holiday: holiday?.name || "", leaveType: leave?.leaveType || "", outside: outside ? { status: outside.status, distance: outside.distance ?? null } : null };
+      return { date: k, code, late: late && !["H", "WO", "L"].includes(code), worked: Math.round(worked * 10) / 10, punchIn: rec?.punchIn || null, punchOut: rec?.punchOut || null, holiday: holiday?.name || "", leaveType: leave?.leaveType || "", shift: dayShift.rostered ? (dayShift.off ? "Rostered off" : `${dayShift.name} · ${fmtMin(shiftStartMin(dayShift, k))}`) : "", outside: outside ? { status: outside.status, distance: outside.distance ?? null } : null };
     });
     summary.workedHours = Math.round(summary.workedHours * 10) / 10;
-    return { user: u, shift: { name: shift.name, start: shift.start, fullDayHours: shift.fullDayHours }, cells, summary };
+    return { user: u, shift: { name: shift.name, start: fmtMin(shiftStartMin(shift, todayKey)), timeZone: shift.timeZone, fullDayHours: shift.fullDayHours }, cells, summary };
   });
   return { month, days, rows, settings: { officeStart: settings.officeStart, graceMinutes: settings.graceMinutes, fullDayHours: settings.fullDayHours, halfDayHours: settings.halfDayHours, weeklyOffs: settings.weeklyOffs } };
 };
@@ -233,6 +239,86 @@ export const getAttendanceReport = async (req, res) => {
       filter = { _id: req.query.userId };
     }
     res.json({ success: true, ...(await buildAttendanceReport(validMonth(req.query.month), filter)) });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+/* ------------------------------ Shift roster ------------------------------ */
+// Monday of the week a YYYY-MM-DD falls in
+const weekStart = (key) => {
+  const d = new Date(`${key}T00:00:00Z`);
+  return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * DAY).toISOString().slice(0, 10);
+};
+const weekDays = (monday) => Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${monday}T00:00:00Z`) + i * DAY).toISOString().slice(0, 10));
+// Admin edits anyone's roster; a Team Lead edits their team's
+const canRoster = async (req, userId) => isAdmin(req) || (await teamMemberIds(req)).includes(String(userId));
+
+// GET /hr/roster?week=YYYY-MM-DD - the week's shift per person (roster entry, else their usual shift)
+export const getRoster = async (req, res) => {
+  try {
+    const settings = await getHrSettings();
+    const monday = weekStart(/^\d{4}-\d{2}-\d{2}$/.test(req.query.week || "") ? req.query.week : localDayKey());
+    const days = weekDays(monday);
+    const ids = isAdmin(req) ? null : await teamMemberIds(req);
+    if (ids && !ids.length) return res.status(403).json({ success: false, message: "Only admins and Team Leads plan shifts" });
+    const users = await User.find({ ...(ids && { _id: { $in: ids } }), isActive: { $ne: false } }).select("fullname designation teams").sort({ fullname: 1 }).lean();
+    const profiles = await EmployeeProfile.find({ userId: { $in: users.map((u) => u._id) } }).select("userId shiftId status").lean();
+    const active = users.filter((u) => profiles.find((p) => String(p.userId) === String(u._id))?.status !== "Exited");
+    const shiftOn = await shiftResolver(settings, active.map((u) => ({ userId: u._id, shiftId: profiles.find((p) => String(p.userId) === String(u._id))?.shiftId })), days[0], days[6]);
+    const shifts = [shiftOf(settings, null), ...(settings.shifts || []).map((s) => shiftOf(settings, s._id))];
+    res.json({
+      success: true, week: monday, days, weeklyOffs: settings.weeklyOffs,
+      // Start times shown in IST for this week (a US-time shift moves when US clocks change)
+      shifts: shifts.map((s) => ({ id: s.id, name: s.name, start: s.start, timeZone: s.timeZone, startLocal: fmtMin(shiftStartMin(s, days[3])), fullDayHours: s.fullDayHours })),
+      people: active.map((u) => ({
+        _id: u._id, fullname: u.fullname, designation: u.designation, teams: (u.teams || []).map((t) => t.teamName).filter(Boolean),
+        usualShift: shiftOf(settings, profiles.find((p) => String(p.userId) === String(u._id))?.shiftId).id,
+        days: days.map((k) => { const s = shiftOn(u._id, k); return { date: k, shiftId: s.id, off: s.off, rostered: s.rostered }; }),
+      })),
+    });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+// PUT /hr/roster { userId, date, value } - value: shift id, "regular", "off", or "" to go back to their usual shift
+export const setRoster = async (req, res) => {
+  try {
+    const { userId, date, value = "" } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(userId) || !/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return res.status(400).json({ success: false, message: "Pick a person and a day" });
+    if (!(await canRoster(req, userId))) return res.status(403).json({ success: false, message: "Only an admin or the person's Team Lead can change their shift" });
+    if (value === "") {
+      await ShiftRoster.deleteOne({ userId, date });
+      return res.json({ success: true, cleared: true });
+    }
+    const settings = await getHrSettings();
+    if (!["off", "regular"].includes(value) && !settings.shifts.some((s) => String(s._id) === String(value))) return res.status(400).json({ success: false, message: "That shift doesn't exist" });
+    const entry = await ShiftRoster.findOneAndUpdate(
+      { userId, date },
+      { $set: { off: value === "off", shiftId: ["off", "regular"].includes(value) ? null : value, by: displayName(req) } },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, entry });
+  } catch (err) {
+    fail(res, err, 400);
+  }
+};
+
+// POST /hr/roster/copy-week { week } - copy last week's planned shifts onto this week (for the people you can roster)
+export const copyRosterWeek = async (req, res) => {
+  try {
+    const monday = weekStart(/^\d{4}-\d{2}-\d{2}$/.test(req.body?.week || "") ? req.body.week : localDayKey());
+    const prev = weekDays(new Date(Date.parse(`${monday}T00:00:00Z`) - 7 * DAY).toISOString().slice(0, 10));
+    const ids = isAdmin(req) ? null : await teamMemberIds(req);
+    const entries = await ShiftRoster.find({ date: { $gte: prev[0], $lte: prev[6] }, ...(ids && { userId: { $in: ids } }) }).lean();
+    if (!entries.length) return res.status(400).json({ success: false, message: "Nothing planned last week to copy" });
+    const by = displayName(req);
+    await ShiftRoster.bulkWrite(entries.map((e) => {
+      const date = new Date(Date.parse(`${e.date}T00:00:00Z`) + 7 * DAY).toISOString().slice(0, 10);
+      return { updateOne: { filter: { userId: e.userId, date }, update: { $set: { off: e.off, shiftId: e.shiftId, by } }, upsert: true } };
+    }));
+    res.json({ success: true, copied: entries.length });
   } catch (err) {
     fail(res, err);
   }

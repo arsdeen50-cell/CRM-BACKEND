@@ -1,5 +1,5 @@
-/* Sample data for a logistics back-office (BPO) demo: a Mumbai team of ~30 working US shifts for US freight
-   brokers, 3PLs and carriers. Everyone and every business here is fictional (example.com emails, 555-01xx phones).
+/* Sample data for a logistics back-office (BPO) demo: a Mumbai team of ~30, organised by client account, working
+   India-day (US after-hours) and US Eastern/Central shifts for US freight brokers, 3PLs and carriers. Everyone and every business here is fictional (example.com emails, 555-01xx phones).
    WIPES the database first, so it refuses to run unless DEMO_MODE=true and the database name contains "demo".
 
    Usage (on the demo backend, with it running):  node scripts/demo-seed-logistics.mjs
@@ -9,6 +9,7 @@ import "dotenv/config";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { shiftStartMin } from "../utils/hrCalendar.js";
 
 const { MONGO_URL, SECRET_KEY, DEMO_PASSWORD } = process.env;
 const API = `http://127.0.0.1:${process.env.PORT || 8000}/api/v1`;
@@ -32,62 +33,70 @@ const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const r = rnd(7);
 const pick = (arr) => arr[Math.floor(r() * arr.length)];
 
-/* ---------- teams (created before anything reads them, so the agency defaults are never added) ---------- */
+/* ---------- teams = client accounts (created before anything reads them, so the agency defaults are never added) ---------- */
 const TEAMS = [
   { name: "Sales Team", subRoles: ["Business Development Manager", "Account Manager"], color: "#16a34a", access: { sales: true, outreach: true } },
-  { name: "Dispatch Team", subRoles: ["Dispatch Lead", "Senior Dispatcher", "Dispatcher"], color: "#ff785a" },
-  { name: "Track & Trace Team", subRoles: ["Track & Trace Lead", "Track & Trace Executive", "Check-call Agent"], color: "#2563eb" },
-  { name: "Billing & AR Team", subRoles: ["AR Lead", "AR Executive", "Collections Specialist"], color: "#7c3aed" },
-  { name: "Accounts Payable Team", subRoles: ["AP Executive", "Carrier Payments Analyst"], color: "#0d9488" },
-  { name: "Documents & Data Team", subRoles: ["Document Processor", "Data Entry Operator"], color: "#ca8a04" },
-  { name: "Customer Support Team", subRoles: ["Support Lead", "Customer Service Rep", "Scheduling Coordinator"], color: "#db2777" },
+  { name: "Redline - After-hours Desk", subRoles: ["Desk Lead", "Track & Trace Executive", "Check-call Agent", "Customer Service Rep"], color: "#2563eb" },
+  { name: "Redline - Dispatch", subRoles: ["Dispatch Lead", "Senior Dispatcher", "Dispatcher", "Scheduling Coordinator"], color: "#ff785a" },
+  { name: "Prairie Haul - Billing & AR", subRoles: ["AR Lead", "AR Executive", "Collections Specialist"], color: "#7c3aed" },
+  { name: "Bluewater 3PL - Docs & AP", subRoles: ["Team Lead", "Document Processor", "Data Entry Operator", "AP Executive"], color: "#0d9488" },
   { name: "Quality & Training", subRoles: ["QA Analyst", "Trainer"], color: "#475569" },
 ];
 const teamIds = {};
 for (const t of TEAMS) teamIds[t.name] = (await db.collection("teams").insertOne({ ...t, description: "", isActive: true, createdBy: "System", createdAt: now, updatedAt: now })).insertedId;
 
-/* ---------- people: [key, name, designation, team, subRole, shift, lead] ---------- */
-const E = "US East night", W = "US West night", D = "Regular";
+/* ---------- shifts: India day for the US after-hours desk, US Eastern/Central day shifts (they move with US daylight saving) ---------- */
+const DAYD = "India day (US after-hours)", ET6 = "US 6-3 ET", ET7 = "US 7-4 ET", ET8 = "US 8-5 ET", CT8 = "US 8-5 CT", REG = "Regular", ROT = "Rotating";
+const SHIFTS = [
+  { name: DAYD, start: "09:00", timeZone: "", fullDayHours: 9, halfDayHours: 4.5 },
+  { name: ET6, start: "06:00", timeZone: "America/New_York", fullDayHours: 9, halfDayHours: 4.5 },
+  { name: ET7, start: "07:00", timeZone: "America/New_York", fullDayHours: 9, halfDayHours: 4.5 },
+  { name: ET8, start: "08:00", timeZone: "America/New_York", fullDayHours: 9, halfDayHours: 4.5 },
+  { name: CT8, start: "08:00", timeZone: "America/Chicago", fullDayHours: 9, halfDayHours: 4.5 },
+];
+
+/* ---------- people: [key, name, designation, team, subRole, usual shift, lead] (Rotating = planned week by week) ---------- */
 const STAFF = [
-  ["admin", "Aisha Verma", "Director - Operations", null, null, D],
-  ["rohan", "Rohan Mehta", "Business Development Manager", "Sales Team", "Business Development Manager", D, true],
-  ["simran", "Simran Kaur", "Account Manager", "Sales Team", "Account Manager", E],
-  ["neha", "Neha Kapoor", "Dispatch Lead", "Dispatch Team", "Dispatch Lead", E, true],
-  ["kabir", "Kabir Singh", "Senior Dispatcher", "Dispatch Team", "Senior Dispatcher", E],
-  ["arjun", "Arjun Nair", "Dispatcher", "Dispatch Team", "Dispatcher", E],
-  ["pooja", "Pooja Shetty", "Dispatcher", "Dispatch Team", "Dispatcher", E],
-  ["yash", "Yash Patil", "Dispatcher", "Dispatch Team", "Dispatcher", W],
-  ["riya", "Riya Desai", "Dispatcher", "Dispatch Team", "Dispatcher", W],
-  ["farhan", "Farhan Qureshi", "Track & Trace Lead", "Track & Trace Team", "Track & Trace Lead", E, true],
-  ["sneha", "Sneha Pillai", "Track & Trace Executive", "Track & Trace Team", "Track & Trace Executive", E],
-  ["vivek", "Vivek Joshi", "Track & Trace Executive", "Track & Trace Team", "Track & Trace Executive", E],
-  ["ananya", "Ananya Iyer", "Check-call Agent", "Track & Trace Team", "Check-call Agent", W],
-  ["omkar", "Omkar Sawant", "Check-call Agent", "Track & Trace Team", "Check-call Agent", W],
-  ["meera", "Meera Rao", "AR Lead", "Billing & AR Team", "AR Lead", D, true],
-  ["ishaan", "Ishaan Rao", "AR Executive", "Billing & AR Team", "AR Executive", D],
-  ["tanvi", "Tanvi Kulkarni", "AR Executive", "Billing & AR Team", "AR Executive", E],
-  ["aman", "Aman Gupta", "Collections Specialist", "Billing & AR Team", "Collections Specialist", E],
-  ["nikita", "Nikita Shah", "AP Executive", "Accounts Payable Team", "AP Executive", D],
-  ["rahul", "Rahul Menon", "Carrier Payments Analyst", "Accounts Payable Team", "Carrier Payments Analyst", D],
-  ["divya", "Divya Thakur", "Document Processor", "Documents & Data Team", "Document Processor", D],
-  ["sahil", "Sahil Khan", "Document Processor", "Documents & Data Team", "Document Processor", D],
-  ["prachi", "Prachi Jain", "Data Entry Operator", "Documents & Data Team", "Data Entry Operator", E],
-  ["karan", "Karan Bhatia", "Data Entry Operator", "Documents & Data Team", "Data Entry Operator", E],
-  ["zoya", "Zoya Sheikh", "Support Lead", "Customer Support Team", "Support Lead", E, true],
-  ["aditya", "Aditya Kamath", "Customer Service Rep", "Customer Support Team", "Customer Service Rep", E],
-  ["nidhi", "Nidhi Saxena", "Customer Service Rep", "Customer Support Team", "Customer Service Rep", W],
-  ["varun", "Varun Chawla", "Scheduling Coordinator", "Customer Support Team", "Scheduling Coordinator", E],
-  ["isha", "Isha Malhotra", "QA Analyst", "Quality & Training", "QA Analyst", D, true],
-  ["dev", "Dev Malhotra", "Trainer", "Quality & Training", "Trainer", D],
+  ["admin", "Aisha Verma", "Director - Operations", null, null, REG],
+  ["rohan", "Rohan Mehta", "Business Development Manager", "Sales Team", "Business Development Manager", REG, true],
+  ["simran", "Simran Kaur", "Account Manager", "Sales Team", "Account Manager", ET8],
+  ["farhan", "Farhan Qureshi", "Desk Lead", "Redline - After-hours Desk", "Desk Lead", DAYD, true],
+  ["sneha", "Sneha Pillai", "Track & Trace Executive", "Redline - After-hours Desk", "Track & Trace Executive", DAYD],
+  ["vivek", "Vivek Joshi", "Track & Trace Executive", "Redline - After-hours Desk", "Track & Trace Executive", DAYD],
+  ["ananya", "Ananya Iyer", "Check-call Agent", "Redline - After-hours Desk", "Check-call Agent", DAYD],
+  ["omkar", "Omkar Sawant", "Check-call Agent", "Redline - After-hours Desk", "Check-call Agent", DAYD],
+  ["aditya", "Aditya Kamath", "Customer Service Rep", "Redline - After-hours Desk", "Customer Service Rep", DAYD],
+  ["nidhi", "Nidhi Saxena", "Customer Service Rep", "Redline - After-hours Desk", "Customer Service Rep", DAYD],
+  ["neha", "Neha Kapoor", "Dispatch Lead", "Redline - Dispatch", "Dispatch Lead", ET7, true],
+  ["kabir", "Kabir Singh", "Senior Dispatcher", "Redline - Dispatch", "Senior Dispatcher", ET6],
+  ["riya", "Riya Desai", "Dispatcher", "Redline - Dispatch", "Dispatcher", ET6],
+  ["arjun", "Arjun Nair", "Dispatcher", "Redline - Dispatch", "Dispatcher", ET7],
+  ["pooja", "Pooja Shetty", "Dispatcher", "Redline - Dispatch", "Dispatcher", ET7],
+  ["yash", "Yash Patil", "Dispatcher", "Redline - Dispatch", "Dispatcher", ET8],
+  ["varun", "Varun Chawla", "Scheduling Coordinator", "Redline - Dispatch", "Scheduling Coordinator", ET8],
+  ["meera", "Meera Rao", "AR Lead", "Prairie Haul - Billing & AR", "AR Lead", CT8, true],
+  ["ishaan", "Ishaan Rao", "AR Executive", "Prairie Haul - Billing & AR", "AR Executive", CT8],
+  ["tanvi", "Tanvi Kulkarni", "AR Executive", "Prairie Haul - Billing & AR", "AR Executive", CT8],
+  ["aman", "Aman Gupta", "Collections Specialist", "Prairie Haul - Billing & AR", "Collections Specialist", CT8],
+  ["zoya", "Zoya Sheikh", "Team Lead", "Bluewater 3PL - Docs & AP", "Team Lead", ET8, true],
+  ["divya", "Divya Thakur", "Document Processor", "Bluewater 3PL - Docs & AP", "Document Processor", ROT],
+  ["sahil", "Sahil Khan", "Document Processor", "Bluewater 3PL - Docs & AP", "Document Processor", ROT],
+  ["prachi", "Prachi Jain", "Data Entry Operator", "Bluewater 3PL - Docs & AP", "Data Entry Operator", ROT],
+  ["karan", "Karan Bhatia", "Data Entry Operator", "Bluewater 3PL - Docs & AP", "Data Entry Operator", ROT],
+  ["nikita", "Nikita Shah", "AP Executive", "Bluewater 3PL - Docs & AP", "AP Executive", ROT],
+  ["rahul", "Rahul Menon", "AP Executive", "Bluewater 3PL - Docs & AP", "AP Executive", ROT],
+  ["isha", "Isha Malhotra", "QA Analyst", "Quality & Training", "QA Analyst", REG, true],
+  ["dev", "Dev Malhotra", "Trainer", "Quality & Training", "Trainer", REG],
 ];
 // The three demo logins
 const LOGINS = { admin: ["admin@demo.example.com", process.env.DEMO_PASSWORD_ADMIN], neha: ["employee@demo.example.com", process.env.DEMO_PASSWORD_EMPLOYEE], arjun: ["agent@demo.example.com", process.env.DEMO_PASSWORD_AGENT] };
 const defaultHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 const ids = {};
-for (const [i, [key, fullname, designation]] of STAFF.entries()) {
+for (const [i, [key, fullname, designation, team, subRole, , lead]] of STAFF.entries()) {
   const email = LOGINS[key]?.[0] || `${fullname.split(" ")[0].toLowerCase()}@demo.example.com`;
   const password = LOGINS[key]?.[1] ? await bcrypt.hash(LOGINS[key][1], 10) : defaultHash;
-  ids[key] = (await db.collection("users").insertOne({ fullname, email, role: key === "admin" ? "admin" : "employee", designation, empId: `ACS-${String(101 + i)}`, password, phoneNumber: 9000000101 + i, profile: { profilePhoto: "" }, teams: [], isActive: true, createdAt: now, updatedAt: now })).insertedId;
+  const teams = team ? [{ team: teamIds[team], teamName: team, subRole, isLead: !!lead }] : [];
+  ids[key] = (await db.collection("users").insertOne({ fullname, email, role: key === "admin" ? "admin" : "employee", designation, empId: `ACS-${String(101 + i)}`, password, phoneNumber: 9000000101 + i, profile: { profilePhoto: "" }, teams, isActive: true, createdAt: now, updatedAt: now })).insertedId;
 }
 const T = Object.fromEntries(Object.entries(ids).map(([k, id]) => [k, jwt.sign({ userId: id, role: k === "admin" ? "admin" : "employee" }, SECRET_KEY)]));
 const call = async (who, method, path, body) => {
@@ -97,16 +106,10 @@ const call = async (who, method, path, body) => {
   return d;
 };
 
-for (const [key, , , team, subRole, , lead] of STAFF) if (team) await call("admin", "PUT", `/team/members/${ids[key]}`, { teams: [{ team: teamIds[team], subRole, isLead: !!lead }] });
-
-/* ---------- HR settings: Mon-Fri (US week), three shifts ---------- */
-const { settings } = await call("admin", "PUT", "/hr/settings", {
-  officeStart: "10:00", graceMinutes: 15, fullDayHours: 8, halfDayHours: 4, weeklyOffs: [0, 6],
-  shifts: [{ name: E, start: "18:30", fullDayHours: 9, halfDayHours: 4.5 }, { name: W, start: "21:30", fullDayHours: 9, halfDayHours: 4.5 }],
-});
+/* ---------- HR settings: Mon-Fri (US week), 10-minute grace ---------- */
+const { settings } = await call("admin", "PUT", "/hr/settings", { officeStart: "10:00", graceMinutes: 10, fullDayHours: 8, halfDayHours: 4, weeklyOffs: [0, 6], shifts: SHIFTS });
 const shiftId = Object.fromEntries(settings.shifts.map((s) => [s.name, s._id]));
-// Time on the floor incl. a 45-minute break, so worked time clears each shift's full day
-const SHIFT = { [D]: { h: 10, m: 0, len: 9 }, [E]: { h: 18, m: 30, len: 9.9 }, [W]: { h: 21, m: 30, len: 9.9 } };
+const SHIFT_DEF = { [REG]: { start: "10:00", timeZone: "", len: 9 }, ...Object.fromEntries(SHIFTS.map((s) => [s.name, { start: s.start, timeZone: s.timeZone, len: 9.9 }])) };
 const year = Number(todayKey.slice(0, 4));
 // US client holidays the floor is closed for
 const thanksgiving = (() => { const d = new Date(Date.UTC(year, 10, 1)); const first = (11 - d.getUTCDay()) % 7 + 1; return `${year}-11-${String(first + 21).padStart(2, "0")}`; })();
@@ -114,30 +117,47 @@ for (const h of [{ date: thanksgiving, name: "Thanksgiving (US clients closed)" 
 
 for (const [i, [key, , designation, , , shift]] of STAFF.entries()) {
   await call("admin", "PUT", `/hr/employees/${ids[key]}`, {
-    designation, employmentType: "Full Time", status: i > 25 ? "Probation" : "Active",
+    designation, employmentType: "Full Time", status: i > 26 ? "Probation" : "Active",
     dateOfJoining: inDays(-(60 + ((i * 97) % 1100))).toISOString(),
     dob: new Date(Date.UTC(1988 + (i % 12), (i * 5) % 12, 1 + ((i * 7) % 27))).toISOString(),
-    workLocation: "Mumbai - Ghatkopar", ...(shift !== D && { shiftId: shiftId[shift] }),
+    workLocation: "Mumbai - Ghatkopar", ...(shiftId[shift] && { shiftId: shiftId[shift] }),
   });
 }
 // A birthday coming up, for the dashboard
 await db.collection("employeeprofiles").updateOne({ userId: ids.sneha }, { $set: { dob: new Date(Date.UTC(1995, new Date(inDays(2)).getUTCMonth(), new Date(inDays(2)).getUTCDate())) } });
 
-/* ---------- attendance: about six weeks, Mon-Fri, overnight shifts end the next morning ---------- */
+/* ---------- roster for the Bluewater team (no fixed shifts): rotates weekly, planned by their Team Lead ---------- */
+const dayKeyOf = (daysAgo) => new Date(Date.parse(todayKey) - daysAgo * DAY).toISOString().slice(0, 10);
+const weekNo = (key) => Math.floor((Date.parse(key) / DAY + 3) / 7); // Monday-based week number
+const ROTATION = [ET6, ET8, DAYD];
+const rotaShift = (i, key) => ROTATION[(i + weekNo(key)) % ROTATION.length];
+const rotating = STAFF.filter((s) => s[5] === ROT).map((s) => s[0]);
+const rosterDocs = [];
+for (let d = 45; d >= -13; d--) {
+  const key = dayKeyOf(d), wd = new Date(key).getUTCDay();
+  if (wd === 0 || wd === 6) continue;
+  rotating.forEach((who, i) => rosterDocs.push({ userId: ids[who], date: key, shiftId: shiftId[rotaShift(i, key)], off: false, by: "Zoya Sheikh", createdAt: now, updatedAt: now }));
+}
+await db.collection("shiftrosters").insertMany(rosterDocs);
+const shiftFor = (key, who) => (rotating.includes(who) ? rotaShift(rotating.indexOf(who), key) : STAFF.find((s) => s[0] === who)[5]);
+
+/* ---------- attendance: about six weeks, Mon-Fri; times follow each day's shift in IST ---------- */
 const att = [];
 for (let d = 45; d >= 0; d--) {
-  const wd = new Date(Date.parse(todayKey) - d * DAY).getUTCDay();
+  const key = dayKeyOf(d), wd = new Date(key).getUTCDay();
   if (wd === 0 || wd === 6) continue;
-  for (const [key, , , , , shift] of STAFF) {
-    if ((key === "yash" && d === 6) || (key === "divya" && d === 11)) continue; // two absences (one on leave)
-    const s = SHIFT[shift];
-    const punchIn = at(d, s.h, s.m - 15 + Math.floor(r() * 32)); // a few minutes either side of the start
+  for (const [who] of STAFF) {
+    if ((who === "yash" && d === 6) || (who === "divya" && d === 11)) continue; // two absences (one on leave)
+    const def = SHIFT_DEF[shiftFor(key, who)];
+    const startMin = shiftStartMin(def, key);
+    const jitter = r() < 0.08 ? 11 + Math.floor(r() * 20) : -12 + Math.floor(r() * 20); // mostly on time, the odd late arrival
+    const punchIn = at(d, 0, startMin + jitter);
     if (punchIn > now) continue; // shift hasn't started yet
-    const out = new Date(punchIn.getTime() + (s.len + r() * 0.6) * HOUR);
+    const out = new Date(punchIn.getTime() + (def.len + r() * 0.5) * HOUR);
     const bStart = new Date(punchIn.getTime() + 4.5 * HOUR), bEnd = new Date(bStart.getTime() + 45 * 60000);
     const done = out <= now;
     att.push({
-      userId: ids[key], punchIn, ...(done && { punchOut: out }),
+      userId: ids[who], punchIn, ...(done && { punchOut: out }),
       breaks: bStart < now ? [{ breakStart: bStart, ...(bEnd < now ? { breakEnd: bEnd } : { breakEnd: null }) }] : [],
       totalBreakTime: bEnd < now ? 45 * 60 : 0, punchInLocation: { status: "off" },
       createdAt: punchIn, updatedAt: done ? out : punchIn,

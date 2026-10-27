@@ -1,4 +1,4 @@
-import { HrSettings, Holiday, LeaveAdjustment, LEAVE_TYPES } from "../models/hr.model.js";
+import { HrSettings, Holiday, LeaveAdjustment, ShiftRoster, LEAVE_TYPES } from "../models/hr.model.js";
 import { Leave } from "../models/leave.model.js";
 import { localDayKey, TZ_OFFSET_MIN } from "./config.js";
 
@@ -13,8 +13,49 @@ export const shiftOf = (settings, shiftId) => {
   const s = shiftId && (settings.shifts || []).find((x) => String(x._id) === String(shiftId));
   const base = { graceMinutes: settings.graceMinutes || 0 };
   return s
-    ? { ...base, id: String(s._id), name: s.name, start: s.start, fullDayHours: s.fullDayHours, halfDayHours: s.halfDayHours }
-    : { ...base, id: "", name: "Regular", start: settings.officeStart, fullDayHours: settings.fullDayHours, halfDayHours: settings.halfDayHours };
+    ? { ...base, id: String(s._id), name: s.name, start: s.start, timeZone: s.timeZone || "", fullDayHours: s.fullDayHours, halfDayHours: s.halfDayHours }
+    : { ...base, id: "", name: "Regular", start: settings.officeStart, timeZone: "", fullDayHours: settings.fullDayHours, halfDayHours: settings.halfDayHours };
+};
+
+export const validTimeZone = (tz) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+// Minutes east of UTC for a zone on a date (e.g. America/New_York: -240 in summer, -300 in winter)
+const zoneOffsetMin = (tz, date) => {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "shortOffset" }).formatToParts(date).find((p) => p.type === "timeZoneName")?.value || "GMT";
+  const m = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(name);
+  return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] || 0)) : 0;
+};
+const hhmm = (s = "00:00") => {
+  const [h, m] = s.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+// When a shift starts on a business day, as minutes after local (CRM time zone) midnight. A US 6:00 Eastern start
+// is 15:30 IST in summer and 16:30 IST in winter.
+export const shiftStartMin = (shift, dayKey) => {
+  if (!shift.timeZone) return hhmm(shift.start);
+  const diff = TZ_OFFSET_MIN - zoneOffsetMin(shift.timeZone, new Date(`${dayKey}T12:00:00Z`));
+  return (((hhmm(shift.start) + diff) % 1440) + 1440) % 1440;
+};
+export const fmtMin = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/* Who works which shift on which day: the roster entry for that day if there is one, else the profile's shift.
+   Returns a function (userId, dayKey) -> { ...shift, off }. */
+export const shiftResolver = async (settings, profiles, fromKey, toKey) => {
+  const userIds = profiles.map((p) => p.userId);
+  const entries = await ShiftRoster.find({ userId: { $in: userIds }, date: { $gte: fromKey, $lte: toKey } }).lean();
+  const rostered = new Map(entries.map((e) => [`${e.userId}|${e.date}`, e]));
+  const profileShift = new Map(profiles.map((p) => [String(p.userId), p.shiftId]));
+  return (userId, dayKey) => {
+    const e = rostered.get(`${userId}|${dayKey}`);
+    if (e) return { ...shiftOf(settings, e.off ? null : e.shiftId), off: !!e.off, rostered: true };
+    return { ...shiftOf(settings, profileShift.get(String(userId))), off: false, rostered: false };
+  };
 };
 
 const DAY = 86400000;
