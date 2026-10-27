@@ -9,6 +9,8 @@ const userSchema = new mongoose.Schema(
     empId: {
       type: String,
     },
+    // Optional sign-in name, for people who log in without an email (stored lower case)
+    username: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
     email: {
       type: String,
       require: true,
