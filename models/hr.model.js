@@ -27,7 +27,10 @@ const hrSettingsSchema = new mongoose.Schema(
       type: [
         new mongoose.Schema({
           name: { type: String, required: true, trim: true },
-          start: { type: String, required: true, match: /^\d{2}:\d{2}$/ }, // HH:mm, business time zone
+          start: { type: String, required: true, match: /^\d{2}:\d{2}$/ }, // HH:mm in timeZone
+          // IANA zone the start time is in, e.g. "America/New_York" for a US 6-3 shift. "" = the CRM's own zone (IST).
+          // US daylight saving is followed automatically, so the shift moves by an hour in IST in March and November.
+          timeZone: { type: String, default: "" },
           fullDayHours: { type: Number, default: 8, min: 0 },
           halfDayHours: { type: Number, default: 4, min: 0 },
         }),
@@ -193,6 +196,21 @@ const employeeProfileSchema = new mongoose.Schema(
   { timestamps: true }
 );
 export const EmployeeProfile = mongoose.model("EmployeeProfile", employeeProfileSchema);
+
+/* Shift roster: someone's shift on one day, overriding the shift on their profile. For accounts without fixed
+   shifts - the Team Lead plans the week. off = rostered off that day (counts like a weekly off). */
+const rosterSchema = new mongoose.Schema(
+  {
+    userId: { type: ObjectId, ref: "User", required: true },
+    date: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ }, // YYYY-MM-DD, the day the shift starts
+    shiftId: { type: ObjectId, default: null }, // null with off=false = the Regular shift
+    off: { type: Boolean, default: false },
+    by: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+rosterSchema.index({ userId: 1, date: 1 }, { unique: true });
+export const ShiftRoster = mongoose.model("ShiftRoster", rosterSchema);
 
 const lineSchema = new mongoose.Schema({ name: { type: String, required: true }, amount: { type: Number, default: 0, min: 0 } }, { _id: false });
 
