@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { OfferTemplate, OFFER_FIELD_TYPES } from "../models/offerTemplate.model.js";
+import { OfferTemplate, OFFER_FIELD_TYPES, SIGNERS } from "../models/offerTemplate.model.js";
 import { GoOnBoarding } from "../models/GoOnBoarding.model.js";
 import { DEFAULT_OFFER_TEMPLATES, missingOfferFields } from "../templatesOnBoarding/offerFromTemplate.js";
 import { displayName } from "../utils/access.js";
@@ -7,7 +7,8 @@ import { displayName } from "../utils/access.js";
 const fail = (res, err, code = 500) => res.status(code).json({ success: false, message: err.message || "Server error" });
 const BUILT_INS = [
   ["candidateName", "Candidate's name"], ["designation", "Designation"], ["positionType", "Position type"], ["doj", "Date of joining"],
-  ["doe", "End date"], ["duration", "Length (from joining to end date)"], ["company", "Company name"],
+  ["doe", "End date"], ["duration", "Length (from joining to end date)"], ["company", "Company name"], ["today", "Date the letter is issued"],
+  ["payTotal", "Total of the pay table"], ["payTotalAnnual", "Pay table total x 12"],
   ["keyResponsibilities", "Key responsibilities list (alone in a section)"], ["whatYoullGain", "What you'll gain list (alone in a section)"],
   ["payTable", "Pay table of the money fields (alone in a section)"],
 ];
@@ -35,6 +36,9 @@ const pick = (b = {}) => {
     ...(b.title !== undefined && { title: str(b.title, 200) }),
     ...(b.intro !== undefined && { intro: str(b.intro) }),
     ...(b.payTitle !== undefined && { payTitle: str(b.payTitle, 60) }),
+    ...(b.payAmountLabel !== undefined && { payAmountLabel: str(b.payAmountLabel, 40) || "Amount" }),
+    ...(b.payTotalLabel !== undefined && { payTotalLabel: str(b.payTotalLabel, 60) }),
+    ...(b.signedBy !== undefined && { signedBy: SIGNERS.includes(b.signedBy) ? b.signedBy : "both" }),
     ...(b.sections !== undefined && { sections: (Array.isArray(b.sections) ? b.sections : []).map((s) => ({ heading: str(s.heading, 120), body: str(s.body) })) }),
     ...(b.fields !== undefined && { fields }),
     ...(b.terms !== undefined && { terms: (Array.isArray(b.terms) ? b.terms : []).map((t) => str(t, 1000).trim()).filter(Boolean) }),
