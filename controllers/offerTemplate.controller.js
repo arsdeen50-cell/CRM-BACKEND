@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { OfferTemplate, OFFER_FIELD_TYPES, SIGNERS } from "../models/offerTemplate.model.js";
+import { OfferTemplate, OFFER_FIELD_TYPES } from "../models/offerTemplate.model.js";
 import { GoOnBoarding } from "../models/GoOnBoarding.model.js";
 import { DEFAULT_OFFER_TEMPLATES, missingOfferFields } from "../templatesOnBoarding/offerFromTemplate.js";
 import { displayName } from "../utils/access.js";
@@ -38,7 +38,6 @@ const pick = (b = {}) => {
     ...(b.payTitle !== undefined && { payTitle: str(b.payTitle, 60) }),
     ...(b.payAmountLabel !== undefined && { payAmountLabel: str(b.payAmountLabel, 40) || "Amount" }),
     ...(b.payTotalLabel !== undefined && { payTotalLabel: str(b.payTotalLabel, 60) }),
-    ...(b.signedBy !== undefined && { signedBy: SIGNERS.includes(b.signedBy) ? b.signedBy : "both" }),
     ...(b.sections !== undefined && { sections: (Array.isArray(b.sections) ? b.sections : []).map((s) => ({ heading: str(s.heading, 120), body: str(s.body) })) }),
     ...(b.fields !== undefined && { fields }),
     ...(b.terms !== undefined && { terms: (Array.isArray(b.terms) ? b.terms : []).map((t) => str(t, 1000).trim()).filter(Boolean) }),
