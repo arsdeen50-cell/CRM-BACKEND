@@ -1,14 +1,23 @@
 import moment from "moment";
 import axios from "axios";
+import fs from "fs";
 
 /* Builds an offer letter (pdfmake definition) from an OfferTemplate and an onboarding record. Same frame as the
-   original internship letter: logo header, page numbers and address footer, co-founder signatures, acceptance. */
+   original internship letter: logo header, page numbers and address footer, founder's signature, acceptance. */
 
 const COMPANY = () => process.env.OFFER_COMPANY_NAME || "Arsdeen";
-const HEADER_IMAGE = "https://res.cloudinary.com/dr2krdnae/image/upload/v1762861750/onboarding_documents/rj3u8yzz2z3zx5lwo9jy.jpg";
+// Letterhead: the AD mark over the ARSDEEN wordmark, from the full-size brand files (sharp at any zoom)
+const brandImage = (file) => {
+  try {
+    return `data:image/png;base64,${fs.readFileSync(new URL(`./brand/${file}`, import.meta.url)).toString("base64")}`;
+  } catch {
+    return null;
+  }
+};
+const LOGO_MARK = brandImage("mark.png");
+const LOGO_WORDMARK = brandImage("wordmark.png");
 const SIGNATURES = [
-  { url: "https://res.cloudinary.com/dr2krdnae/image/upload/v1762863279/onboarding_documents/xextqfjszcviet9f4hbu.jpg", name: "Fardeen", role: "Co-Founder" },
-  { url: "https://res.cloudinary.com/dr2krdnae/image/upload/v1762863278/onboarding_documents/ntnhkjk74mdsa5ky88ss.jpg", name: "Arsalan", role: "Co-Founder" },
+  { url: "https://res.cloudinary.com/dr2krdnae/image/upload/v1762863278/onboarding_documents/ntnhkjk74mdsa5ky88ss.jpg", name: "Arsalan", role: "Founder & CEO" },
 ];
 const ADDRESS = "4th Floor Khan House BR Patil Marg Trombay 400088";
 
@@ -87,8 +96,8 @@ const bodyBlocks = (body, values, candidate) => {
 
 export const generateOfferFromTemplate = async (template, candidate) => {
   const values = offerValues(template, candidate);
-  const signers = SIGNATURES.filter((s) => !template.signedBy || template.signedBy === "both" || s.name === template.signedBy);
-  const [header, ...signs] = await Promise.all([imageData(HEADER_IMAGE), ...signers.map((s) => imageData(s.url))]);
+  const signers = SIGNATURES;
+  const signs = await Promise.all(signers.map((s) => imageData(s.url)));
   const payRows = (template.fields || []).filter((f) => f.type === "money" && f.inPayTable && values[f.key]);
 
   const content = [
@@ -153,24 +162,22 @@ export const generateOfferFromTemplate = async (template, candidate) => {
   content.push({ columns: [{ width: "50%", text: "Signature: ________________" }, { width: "50%", text: "Date: ________________" }], margin: [0, 0, 0, 10] });
 
   return {
-    pageMargins: [40, 60, 40, 80],
-    header: () => [
-      {
-        stack: [
-          ...(header ? [{ image: header, width: 120, height: 40, alignment: "center", margin: [0, 0, 0, 3] }] : []),
-          { canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: "#dddddd" }], margin: [0, 3, 0, 3] },
-        ],
-        alignment: "center",
-        margin: [0, 5, 0, 0],
-      },
-    ],
+    pageMargins: [40, 86, 40, 80],
+    header: () => ({
+      stack: [
+        ...(LOGO_MARK ? [{ image: LOGO_MARK, width: 30, alignment: "center", margin: [0, 0, 0, 6] }] : []),
+        ...(LOGO_WORDMARK ? [{ image: LOGO_WORDMARK, width: 118, alignment: "center", margin: [0, 0, 0, 10] }] : [{ text: "ARSDEEN", alignment: "center", bold: true, fontSize: 14, characterSpacing: 4, margin: [0, 0, 0, 10] }]),
+        { canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.75, lineColor: "#111111" }] },
+      ],
+      margin: [40, 18, 40, 0],
+    }),
     footer: (currentPage, pageCount) => [
       {
         stack: [
           { canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: "#cccccc" }], margin: [0, 0, 0, 5] },
           { text: `Page ${currentPage} of ${pageCount}`, alignment: "center", fontSize: 7, color: "#666666", margin: [0, 0, 0, 5] },
         ],
-        margin: [0, 10, 0, 0],
+        margin: [40, 10, 40, 0],
       },
       { text: ADDRESS, style: "footerText", alignment: "center", margin: [0, 5, 0, 10] },
     ],
@@ -217,11 +224,10 @@ export const FULL_TIME_TEMPLATE = {
   payTitle: "Compensation Details",
   payAmountLabel: "Monthly (₹)",
   payTotalLabel: "Total Gross Salary (per month)",
-  signedBy: "both",
   fields: [
     { key: "workMode", label: "Work mode", type: "text", required: true, default: "Work from office" },
     { key: "workingHours", label: "Working days & hours", type: "text", required: true, default: "Monday to Saturday, 10:00 AM to 7:00 PM" },
-    { key: "reportingTo", label: "Reporting to", type: "text", required: true, default: "Founders" },
+    { key: "reportingTo", label: "Reporting to", type: "text", required: true, default: "Founder & CEO" },
     { key: "probationMonths", label: "Probation (months)", type: "number", required: true, default: "3" },
     { key: "noticeProbationDays", label: "Notice during probation (days)", type: "number", required: true },
     { key: "noticeDays", label: "Notice after confirmation (days)", type: "number", required: true },
