@@ -2,6 +2,7 @@
 import { Leave } from "../models/leave.model.js";
 import { User } from "../models/user.model.js";
 import { countLeaveDays, leaveBalance } from "../utils/hrCalendar.js";
+import { notify, approversOf } from "../utils/notify.js";
 
 // Create a leave request
 /* Body: { leaveType, startDate, endDate, reason, halfDay, halfDaySession }
@@ -37,6 +38,8 @@ export const createLeave = async (req, res) => {
     });
     await leave.save();
     const populatedLeave = await Leave.findById(leave._id).populate("employee", "fullname email");
+    const when = (d) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+    notify(await approversOf(req.id), { kind: "leave", title: `Leave request: ${user.fullname || "someone"}`, body: `${leaveType} · ${days} day${days === 1 ? "" : "s"} from ${when(leave.startDate)}`, link: "/leave" }, { email: true });
     res.status(201).json({ success: true, leave: populatedLeave });
   } catch (err) {
     console.error(err.message);
@@ -177,6 +180,9 @@ leave.logs.push({
     
     const populatedLeave = await Leave.findById(leave._id)
       .populate('employee', 'fullname email');
+    if (["Approved", "Rejected"].includes(status)) {
+      notify([leave.employee], { kind: "leave", title: `Your ${leave.leaveType} leave was ${status.toLowerCase()}`, body: adminComment ? `${admin.fullname}: ${adminComment}` : `By ${admin.fullname || "your manager"}`, link: "/leave" }, { email: true, exclude: req.id });
+    }
 
     res.json({
       success: true,
