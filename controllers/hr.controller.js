@@ -14,6 +14,7 @@ import { displayName } from "../utils/access.js";
 import { logAudit } from "../utils/audit.js";
 import { renderPdf, company, money } from "../utils/proposalPdf.js";
 import { sendEmail, textToHtml } from "../utils/mailer.js";
+import { notify, approversOf } from "../utils/notify.js";
 
 const DAY = 86400000;
 const isAdmin = (req) => req.role === "admin";
@@ -337,6 +338,7 @@ export const requestCorrection = async (req, res) => {
     if (pi && po && po <= pi) return res.status(400).json({ success: false, message: "Punch-out must be after punch-in" });
     if (await AttendanceCorrection.exists({ userId: req.id, date, status: "Pending" })) return res.status(400).json({ success: false, message: "You already have a pending correction for that day" });
     const c = await AttendanceCorrection.create({ userId: req.id, date, punchIn: pi, punchOut: po, reason: String(reason).slice(0, 500) });
+    notify(await approversOf(req.id), { kind: "correction", title: `Attendance correction: ${displayName(req)}`, body: `${date} · ${String(reason).slice(0, 120)}`, link: "/hr/attendance" });
     res.status(201).json({ success: true, correction: c });
   } catch (err) {
     fail(res, err, 400);
@@ -371,6 +373,7 @@ export const decideCorrection = async (req, res) => {
     }
     Object.assign(c, { status, comment: comment || "", decidedBy: displayName(req), decidedAt: new Date() });
     await c.save();
+    notify([c.userId], { kind: "correction", title: `Your attendance correction for ${c.date} was ${status.toLowerCase()}`, body: comment ? `${displayName(req)}: ${comment}` : `By ${displayName(req)}`, link: "/hr/attendance" }, { exclude: req.id });
     res.json({ success: true, correction: c });
   } catch (err) {
     fail(res, err);

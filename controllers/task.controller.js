@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { Task } from "../models/task.model.js";
 import { User } from "../models/user.model.js";
+import { notify } from "../utils/notify.js";
 
 /* ---------------------- Create Task (Normal User) ---------------------- */
 export const createTask = async (req, res) => {
@@ -206,6 +207,8 @@ export const createAdminTask = async (req, res) => {
       .populate("createdBy", "fullname email profile")
       .populate("assignedTo.user", "fullname email profile");
 
+    const due = task.endDate ? ` · due ${new Date(task.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}` : "";
+    notify((assignedTo || []).map(String), { kind: "task", title: `New task: ${task.title}`, body: `From ${populatedTask.createdBy?.fullname || "an admin"}${due}`, link: "/task" }, { email: true, exclude: req.id });
     res.status(201).json({ success: true, task: populatedTask });
   } catch (err) {
     console.error("Error creating admin task:", err);

@@ -1,6 +1,8 @@
 import PdfPrinter from "pdfmake";
 import { v2 as cloudinary } from "cloudinary";
 import { generateInternshipOffer } from "./generateInternshipOffer.js";
+import { generateOfferFromTemplate } from "./offerFromTemplate.js";
+import { OfferTemplate } from "../models/offerTemplate.model.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -48,8 +50,9 @@ const generatePDF = async (pdfDefinition) => {
 // Main function to generate and upload PDF
 export const generateAndUploadPDF = async (candidateData, previewMode = false) => {
   try {
-    // Generate PDF definition using your existing function
-    const pdfDefinition = await generateInternshipOffer(candidateData);
+    // The template HR picked for this candidate's role; older records without one keep the original letter
+    const template = candidateData.offerTemplateId && (await OfferTemplate.findById(candidateData.offerTemplateId).lean());
+    const pdfDefinition = template ? await generateOfferFromTemplate(template, candidateData) : await generateInternshipOffer(candidateData);
     
     // Generate PDF buffer
     const pdfBuffer = await generatePDF(pdfDefinition);

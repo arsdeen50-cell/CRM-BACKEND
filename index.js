@@ -33,6 +33,8 @@ import teamRoute from "./routes/team.route.js";
 import hrRoute from "./routes/hr.route.js";
 import dashboardRoute from "./routes/dashboard.route.js";
 import demoRoute from "./routes/demo.route.js";
+import notificationRoute from "./routes/notification.route.js";
+import { startDailyReminders } from "./utils/notify.js";
 import { backfillLeaveDays } from "./controllers/hr.controller.js";
 import { scrubSignupPasswords } from "./controllers/goOnBoarding.controller.js";
 import { portalRouter, portalAccessRouter } from "./routes/portal.route.js";
@@ -136,6 +138,7 @@ app.use("/api/v1/public", publicRoute);
 app.use("/api/v1/team", teamRoute);
 app.use("/api/v1/hr", hrRoute);
 app.use("/api/v1/dashboard", dashboardRoute);
+app.use("/api/v1/notifications", notificationRoute);
 // Demo copies only (DEMO_MODE=true): admin can refill the sample data
 if (process.env.DEMO_MODE === "true") app.use("/api/v1/demo", demoRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
@@ -157,6 +160,8 @@ app.listen(PORT, async () => {
   scrubSignupPasswords().catch((err) => console.error("Signup password scrub failed:", err.message));
   startFollowUpDigest();
   startSequenceRunner();
+  // Morning reminders in the notification bell (DAILY_REMINDERS=false turns them off, e.g. on demo copies)
+  if (process.env.DAILY_REMINDERS !== "false") startDailyReminders();
   startBillingRunner();
   startExitRunner();
   console.log(`🚀 Server running on http://localhost:${PORT}`);

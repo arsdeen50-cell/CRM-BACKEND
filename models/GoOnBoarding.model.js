@@ -107,6 +107,9 @@ const goOnBoardingSchema = new mongoose.Schema(
     offeredTotalCtc: {
       type: Number,
     },
+    // Offer letter: the template HR picked for this role and the values filled in for it (stipend, CTC, ...)
+    offerTemplateId: { type: mongoose.Schema.Types.ObjectId, ref: "OfferTemplate" },
+    offerFields: { type: mongoose.Schema.Types.Mixed, default: {} },
     candidateStatus: {
       type: String,
       enum: ['Pending',"Send Link To Candidate","Documents Submitted", 'In Progress', 'Approved', 'Rejected'],
