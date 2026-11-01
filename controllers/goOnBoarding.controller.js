@@ -10,6 +10,9 @@ import { candidateFormLinkTemplate } from "../templatesOnBoarding/candidateFormL
 import { documentsSubmittedTemplate } from "../templatesOnBoarding/documentsSubmittedTemplate.js";
 import { User } from "../models/user.model.js";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import { OfferTemplate } from "../models/offerTemplate.model.js";
+import { missingOfferFields } from "../templatesOnBoarding/offerFromTemplate.js";
 
 /* ---------------------- Create GoOnBoarding ---------------------- */
 export const createGoOnBoarding = async (req, res) => {
@@ -261,6 +264,7 @@ export const getGoOnBoardingById = async (req, res) => {
 export const updateGoOnBoarding = async (req, res) => {
     try {
       const { id } = req.params;
+      req.files = req.files || []; // a JSON update has no uploads
   
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({
@@ -363,8 +367,16 @@ export const updateGoOnBoarding = async (req, res) => {
       }
   
       // --- Perform update ---
-      // signup credentials are only ever set at signup, never through an update
+      // signup credentials are only ever set at signup, never through an update; the offer letter has its own endpoint
       delete updateData.signupCredentials;
+      delete updateData.offerTemplateId;
+      delete updateData.offerFields;
+      // Approving sends the offer letter, so its required details must be filled in first
+      if (updateData.candidateStatus === "Approved" && existingOnboarding.candidateStatus !== "Approved" && existingOnboarding.offerTemplateId) {
+        const template = await OfferTemplate.findById(existingOnboarding.offerTemplateId).lean();
+        const missing = template ? missingOfferFields(template, existingOnboarding) : [];
+        if (missing.length) return res.status(400).json({ success: false, message: `Fill in the offer letter before approving: ${missing.join(", ")}` });
+      }
       const updatedOnboarding = await GoOnBoarding.findByIdAndUpdate(id, updateData, {
         new: true,
         runValidators: true,
@@ -469,8 +481,8 @@ export const updateGoOnBoarding = async (req, res) => {
             const userCount = await User.countDocuments();
             empId = `EMP-${String(userCount + 1).padStart(3, "0")}`;
             
-            // Generate password: TOM@ + empId (e.g., TOM@EMP-001)
-            generatedPassword = `TOM@${empId}`;
+            // A random first password (emailed to the joiner), not one anyone could guess from the employee code
+            generatedPassword = `${crypto.randomBytes(6).toString("base64url")}#${crypto.randomInt(10, 99)}`;
             const hashedPassword = await bcrypt.hash(generatedPassword, 10);
             
             // Create user data
@@ -493,7 +505,7 @@ export const updateGoOnBoarding = async (req, res) => {
             await User.create(userData);
             userCreated = true;
             
-            console.log(`User created successfully with email: ${updatedOnboarding.email}, empId: ${empId}, password: ${generatedPassword}`);
+            console.log(`User created for ${updatedOnboarding.email} (${empId})`);
           }
 
 

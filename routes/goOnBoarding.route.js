@@ -13,7 +13,9 @@ import {
   submitCandidateForm,
   checkDuplicateOnboarding,
 } from "../controllers/goOnBoarding.controller.js";
+import { getOfferTemplates, createOfferTemplate, updateOfferTemplate, deleteOfferTemplate, setCandidateOffer } from "../controllers/offerTemplate.controller.js";
 import isAuthenticated from "../middlewares/isAuthentications.js";
+import { loadCurrentUser } from "../utils/access.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import { rateLimit } from "../utils/rateLimit.js";
 import { multipleUpload } from "../middlewares/multer.js";
@@ -29,6 +31,11 @@ router.put("/candidate/:id", publicLimit, multipleUpload, submitCandidateForm);
 
 // HR only: candidate records hold ID documents and bank details
 const hr = [isAuthenticated, isAdmin];
+// Offer letter templates per role (before "/:id" so the path isn't read as an id)
+router.get("/offer-templates", hr, loadCurrentUser, getOfferTemplates);
+router.post("/offer-templates", hr, loadCurrentUser, createOfferTemplate);
+router.put("/offer-templates/:tid", hr, loadCurrentUser, updateOfferTemplate);
+router.delete("/offer-templates/:tid", hr, loadCurrentUser, deleteOfferTemplate);
 router.get("/", hr, getGoOnBoardings);
 router.get("/stats", hr, getOnboardingStats);
 router.get("/:id", hr, getGoOnBoardingById);
@@ -37,5 +44,6 @@ router.delete("/:id", hr, deleteGoOnBoarding);
 router.post("/from-signup", hr, multipleUpload, createOnboardingFromSignup);
 router.delete("/:id/documents/:docType/:docIndex?", hr, deleteOnboardingDocument);
 router.get("/:id/preview-offer", hr, previewOfferLetter);
+router.put("/:id/offer", hr, setCandidateOffer);
 
 export default router;
