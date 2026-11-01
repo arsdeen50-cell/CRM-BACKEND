@@ -148,7 +148,10 @@ export const updateAttendance = async (req, res) => {
     if (attendance.userId) {
       const user = await User.findById(attendance.userId);
       if (user) {
-        if (empId !== undefined) user.empId = empId;
+        if (empId !== undefined && empId !== user.empId) {
+          if (empId && (await User.exists({ empId, _id: { $ne: user._id } }))) return res.status(400).json({ success: false, msg: `${empId} is already someone else's employee ID` });
+          user.empId = empId;
+        }
         if (fullname !== undefined) user.fullname = fullname;
         if (email !== undefined) user.email = email;
         await user.save();

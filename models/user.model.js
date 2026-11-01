@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema(
       require: true,
     },
     empId: {
-      type: String,
+      type: String, // EMP-001 ...; unique, see the index below
     },
     // Optional sign-in name, for people who log in without an email (stored lower case)
     username: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
@@ -59,5 +59,8 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// No two accounts share an employee code (blank codes are allowed)
+userSchema.index({ empId: 1 }, { unique: true, partialFilterExpression: { empId: { $gt: "" } } });
 
 export const User = mongoose.model("User", userSchema);

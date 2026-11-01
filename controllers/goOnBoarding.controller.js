@@ -13,6 +13,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { OfferTemplate } from "../models/offerTemplate.model.js";
 import { missingOfferFields } from "../templatesOnBoarding/offerFromTemplate.js";
+import { createWithEmpId } from "../utils/empId.js";
 
 /* ---------------------- Create GoOnBoarding ---------------------- */
 export const createGoOnBoarding = async (req, res) => {
@@ -478,8 +479,6 @@ export const updateGoOnBoarding = async (req, res) => {
             });
         } else {
             // Generate empId and password only if user doesn't exist
-            const userCount = await User.countDocuments();
-            empId = `EMP-${String(userCount + 1).padStart(3, "0")}`;
             
             // A random first password (emailed to the joiner), not one anyone could guess from the employee code
             generatedPassword = `${crypto.randomBytes(6).toString("base64url")}#${crypto.randomInt(10, 99)}`;
@@ -491,7 +490,6 @@ export const updateGoOnBoarding = async (req, res) => {
                 email: updatedOnboarding.email,
                 phoneNumber: updatedOnboarding.mobileNo,
                 password: hashedPassword,
-                empId: empId,
             };
             
             // Handle profile photo if exists
@@ -502,7 +500,7 @@ export const updateGoOnBoarding = async (req, res) => {
             }
             
             // Create user in database
-            await User.create(userData);
+            empId = (await createWithEmpId(userData)).empId;
             userCreated = true;
             
             console.log(`User created for ${updatedOnboarding.email} (${empId})`);

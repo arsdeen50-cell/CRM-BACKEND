@@ -9,6 +9,7 @@ import cloudinary from "../utils/cloudinary.js";
 import sendMail from "../middlewares/mail.js";
 import { otpTemplate } from "../emailTemplates/otpTemplate.js";
 import { sendEmail } from "../utils/mailer.js";
+import { createWithEmpId } from "../utils/empId.js";
 
 // controllers/user.controllers.js - Update register function
 
@@ -38,9 +39,7 @@ export const register = async (req, res) => {
       hashedPassword = await bcrypt.hash(String(password || generatedPassword), 10);
     }
 
-    const userCount = await User.countDocuments();
-    const empId = `EMP-${String(userCount + 1).padStart(3, "0")}`;
-    const userData = { fullname, email, phoneNumber, password: hashedPassword, empId, designation: designation || "", role: "employee" };
+    const userData = { fullname, email, phoneNumber, password: hashedPassword, designation: designation || "", role: "employee" };
 
     if (req.file) {
       const fileuri = getDataUri(req.file);
@@ -48,7 +47,7 @@ export const register = async (req, res) => {
       userData.profile = { profilePhoto: cloudResponse.secure_url };
     }
 
-    await User.create(userData);
+    await createWithEmpId(userData);
     return res.status(200).json({
       message: "Account created successfully.",
       success: true,
