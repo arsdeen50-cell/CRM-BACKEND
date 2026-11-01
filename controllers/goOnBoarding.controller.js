@@ -396,7 +396,7 @@ export const updateGoOnBoarding = async (req, res) => {
   
           const to = updatedOnboarding.email;
           const cc = ["arsdeen50@gmail.com"];
-          const bcc = ["sayedfardeen815@gmail.com", "shaikhfazil180@gmail.com"];
+          const bcc = [];
   
           await sendMail(
             to,
@@ -438,7 +438,7 @@ export const updateGoOnBoarding = async (req, res) => {
   
           const to = updatedOnboarding.email;
           const cc = ["arsdeen50@gmail.com"];
-          const bcc = ["sayedfardeen815@gmail.com", "shaikhfazil180@gmail.com"];
+          const bcc = [];
   
           await sendMail(
             to,
@@ -533,7 +533,7 @@ export const updateGoOnBoarding = async (req, res) => {
   
           const to = updatedOnboarding.email;
           const cc = ["arsdeen50@gmail.com"];
-          const bcc = ["sayedfardeen815@gmail.com", "shaikhfazil180@gmail.com"];
+          const bcc = [];
   
           await sendMail(
             to,
