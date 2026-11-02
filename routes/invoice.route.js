@@ -2,11 +2,14 @@ import express from "express";
 import isAuthenticated from "../middlewares/isAuthentications.js";
 import { loadCurrentUser, adminOnly } from "../utils/access.js";
 import * as c from "../controllers/invoice.controller.js";
+import { revenueReport } from "../controllers/revenue.controller.js";
 
 // Billing is admin-only.
 const router = express.Router();
 router.use(isAuthenticated, loadCurrentUser, adminOnly);
 router.get("/", c.getInvoices);
+// Revenue forecast, unpaid-invoice aging and invoiced vs collected (before "/:id")
+router.get("/reports/revenue", revenueReport);
 router.post("/", c.createInvoice);
 router.post("/from-proposal/:proposalId", c.createFromProposal);
 router.post("/from-retainer/:retainerId", c.createFromRetainer);
