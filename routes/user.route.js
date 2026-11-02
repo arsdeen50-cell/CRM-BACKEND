@@ -8,6 +8,10 @@ import {
   resetPassword,
   sendOtp,
   updateProfile,
+  checkSetPasswordLink,
+  setPasswordWithLink,
+  changePassword,
+  sendPasswordLink,
   updateUserByAdmin,
   verifyOtp,
 } from "../controllers/user.controllers.js";
@@ -37,5 +41,11 @@ const otpCheckLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 15 });
 router.post("/send-otp", otpSendLimit, sendOtp);
 router.post("/verify-otp", otpCheckLimit, verifyOtp);
 router.post("/reset-password", otpCheckLimit, resetPassword);
+
+// One-time "set your password" links (sent instead of emailing passwords) and changing your own password
+router.get("/set-password/:token", otpCheckLimit, checkSetPasswordLink);
+router.post("/set-password", otpCheckLimit, setPasswordWithLink);
+router.post("/change-password", isAuthenticated, otpCheckLimit, changePassword);
+router.post("/admin/users/:id/password-link", isAuthenticated, isAdmin, sendPasswordLink);
 
 export default router;

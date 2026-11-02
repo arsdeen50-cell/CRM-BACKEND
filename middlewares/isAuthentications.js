@@ -6,14 +6,16 @@ import { User } from "../models/user.model.js";
 const activeCache = new Map();
 const ACTIVE_MS = 30 * 1000;
 export const clearActiveCache = (userId) => (userId ? activeCache.delete(String(userId)) : activeCache.clear());
-const isActiveUser = async (userId) => {
+const accountState = async (userId) => {
   const hit = activeCache.get(String(userId));
-  if (hit && hit.expires > Date.now()) return hit.active;
-  const u = await User.findById(userId).select("isActive").lean();
-  const active = !!u && u.isActive !== false;
-  activeCache.set(String(userId), { active, expires: Date.now() + ACTIVE_MS });
-  return active;
+  if (hit && hit.expires > Date.now()) return hit;
+  const u = await User.findById(userId).select("isActive mustChangePassword").lean();
+  const state = { active: !!u && u.isActive !== false, mustChangePassword: !!u?.mustChangePassword, expires: Date.now() + ACTIVE_MS };
+  activeCache.set(String(userId), state);
+  return state;
 };
+// Someone who must change their password may only do that (and log out) until they have
+const ALLOWED_BEFORE_CHANGE = ["/api/v1/user/change-password", "/api/v1/user/logout"];
 
 const isAuthenticated = async (req, res, next) => {
   try {
@@ -47,8 +49,12 @@ const isAuthenticated = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.SECRET_KEY);
-    if (!(await isActiveUser(decoded.userId))) {
+    const state = await accountState(decoded.userId);
+    if (!state.active) {
       return res.status(401).json({ success: false, message: "This account has been deactivated. Please contact HR." });
+    }
+    if (state.mustChangePassword && !ALLOWED_BEFORE_CHANGE.includes(req.originalUrl.split("?")[0])) {
+      return res.status(403).json({ success: false, code: "MUST_CHANGE_PASSWORD", message: "Please choose a new password to continue." });
     }
     req.user = decoded; // Attach the decoded user to the request
      req.id = decoded.userId; 

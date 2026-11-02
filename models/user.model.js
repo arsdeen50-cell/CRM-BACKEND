@@ -56,6 +56,12 @@ const userSchema = new mongoose.Schema(
     resetOtp: String,
     resetOtpExpiry: Date,
     resetOtpAttempts: { type: Number, default: 0 },
+    // Set when someone else knows the password (HR typed or generated it): the person must pick their own
+    // before they can use the CRM. Cleared when they change it.
+    mustChangePassword: { type: Boolean, default: false },
+    // One-time "set your password" link (sent instead of emailing a password); only a hash is stored
+    setPasswordTokenHash: String,
+    setPasswordExpiry: Date,
   },
   { timestamps: true }
 );

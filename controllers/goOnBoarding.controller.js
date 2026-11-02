@@ -14,6 +14,7 @@ import crypto from "crypto";
 import { OfferTemplate } from "../models/offerTemplate.model.js";
 import { missingOfferFields } from "../templatesOnBoarding/offerFromTemplate.js";
 import { createWithEmpId } from "../utils/empId.js";
+import { issueSetPasswordLink } from "../utils/passwordLink.js";
 
 /* ---------------------- Create GoOnBoarding ---------------------- */
 export const createGoOnBoarding = async (req, res) => {
@@ -463,7 +464,7 @@ export const updateGoOnBoarding = async (req, res) => {
         
         let userCreated = false;
         let empId = null;
-        let generatedPassword = null;
+        let loginAccess = null;
         
         if (existingUser) {
             console.log(`User already exists with email: ${updatedOnboarding.email}`);
@@ -480,9 +481,10 @@ export const updateGoOnBoarding = async (req, res) => {
         } else {
             // Generate empId and password only if user doesn't exist
             
-            // A random first password (emailed to the joiner), not one anyone could guess from the employee code
-            generatedPassword = `${crypto.randomBytes(6).toString("base64url")}#${crypto.randomInt(10, 99)}`;
-            const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+            // No password goes by email: the joiner logs in with the password they chose at signup, or, when
+            // there is none, sets one with a one-time link. The random password below is never shown to anyone.
+            const signupHash = updatedOnboarding.signupCredentials?.passwordHash;
+            const hashedPassword = signupHash || (await bcrypt.hash(crypto.randomBytes(24).toString("base64url"), 10));
             
             // Create user data
             const userData = {
@@ -500,7 +502,9 @@ export const updateGoOnBoarding = async (req, res) => {
             }
             
             // Create user in database
-            empId = (await createWithEmpId(userData)).empId;
+            const created = await createWithEmpId(userData);
+            empId = created.empId;
+            loginAccess = signupHash ? { signupPassword: true } : await issueSetPasswordLink(created._id);
             userCreated = true;
             
             console.log(`User created for ${updatedOnboarding.email} (${empId})`);
@@ -527,7 +531,7 @@ export const updateGoOnBoarding = async (req, res) => {
           const htmlContent = onboardingApprovedTemplate(updatedOnboarding.candidateName, 
             updatedOnboarding.positionType,
             updatedOnboarding.email,
-            generatedPassword,
+            loginAccess,
             empId
           );
   
