@@ -1,6 +1,9 @@
 // controllers/leadClient.controller.js
 import { LeadClient } from "../models/leadClient.model.js";
 import { LeadSource } from "../models/leadSource.model.js";
+import { Retainer } from "../models/retainer.model.js";
+import { Project } from "../models/project.model.js";
+import { Invoice } from "../models/invoice.model.js";
 import mongoose from "mongoose";
 import { escapeRegex, isAdminReq, leadScopeFilter, displayName } from "../utils/access.js";
 import { logAudit, diffFields } from "../utils/audit.js";
@@ -95,10 +98,21 @@ export const createLeadClient = async (req, res) => {
   }
 };
 
-// Get all Lead Clients
+// A company is a client once it has a won deal, a retainer, a project or an invoice that went out; everyone else is a prospect
+const clientIdSet = async () => {
+  const lists = await Promise.all([
+    LeadSource.distinct("clientId", { pipelineStage: "Won" }),
+    Retainer.distinct("clientId"),
+    Project.distinct("clientId"),
+    Invoice.distinct("clientId", { status: { $nin: ["Draft", "Cancelled"] } }),
+  ]);
+  return new Set(lists.flat().filter(Boolean).map(String));
+};
+
+// Get all Lead Clients (kind=client|prospect narrows the list; counts always cover both)
 export const getLeadClients = async (req, res) => {
   try {
-    const { search, sortBy, sortOrder, tier, missingContact } = req.query;
+    const { search, sortBy, sortOrder, tier, missingContact, kind } = req.query;
 
     let query = { isDeleted: false, ...(await clientScopeFilter(req)) };
 
@@ -125,12 +139,16 @@ export const getLeadClients = async (req, res) => {
       sortOptions = { [sortBy]: sortOrder === "asc" ? 1 : -1 };
     }
 
-    const clients = await LeadClient.find(query).sort(sortOptions);
+    const [all, clientIds] = await Promise.all([LeadClient.find(query).sort(sortOptions), clientIdSet()]);
+    const marked = all.map((c) => ({ ...c.toJSON(), isClient: clientIds.has(String(c._id)) }));
+    const kinds = { client: marked.filter((c) => c.isClient).length, prospect: marked.filter((c) => !c.isClient).length };
+    const clients = kind === "client" || kind === "prospect" ? marked.filter((c) => c.isClient === (kind === "client")) : marked;
 
     res.status(200).json({
       success: true,
       clients,
       count: clients.length,
+      kinds,
     });
   } catch (err) {
     console.error("Error fetching lead clients:", err);
