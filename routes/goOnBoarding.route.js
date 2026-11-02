@@ -14,6 +14,7 @@ import {
   checkDuplicateOnboarding,
 } from "../controllers/goOnBoarding.controller.js";
 import { getOfferTemplates, createOfferTemplate, updateOfferTemplate, deleteOfferTemplate, setCandidateOffer } from "../controllers/offerTemplate.controller.js";
+import { listInterviews, createInterview, updateInterview, deleteInterview, interviewIcs, upcomingInterviews } from "../controllers/interview.controller.js";
 import isAuthenticated from "../middlewares/isAuthentications.js";
 import { loadCurrentUser } from "../utils/access.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
@@ -37,6 +38,13 @@ router.post("/offer-templates", hr, loadCurrentUser, createOfferTemplate);
 router.put("/offer-templates/:tid", hr, loadCurrentUser, updateOfferTemplate);
 router.delete("/offer-templates/:tid", hr, loadCurrentUser, deleteOfferTemplate);
 router.get("/", hr, getGoOnBoardings);
+// Interview rounds for a candidate (before "/:id" so "interviews" isn't read as an id)
+router.get("/interviews/upcoming", hr, upcomingInterviews);
+router.get("/:id/interviews", hr, listInterviews);
+router.post("/:id/interviews", hr, loadCurrentUser, createInterview);
+router.put("/:id/interviews/:iid", hr, loadCurrentUser, updateInterview);
+router.delete("/:id/interviews/:iid", hr, deleteInterview);
+router.get("/:id/interviews/:iid/ics", hr, interviewIcs);
 router.get("/stats", hr, getOnboardingStats);
 router.get("/:id", hr, getGoOnBoardingById);
 router.put("/:id", hr, multipleUpload, updateGoOnBoarding);

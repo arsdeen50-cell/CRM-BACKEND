@@ -8,8 +8,11 @@ import getDataUri from "../utils/datauri.js";
 import cloudinary from "../utils/cloudinary.js";
 import sendMail from "../middlewares/mail.js";
 import { otpTemplate } from "../emailTemplates/otpTemplate.js";
-import { sendEmail } from "../utils/mailer.js";
+import { sendEmail, emailConfigured } from "../utils/mailer.js";
 import { createWithEmpId } from "../utils/empId.js";
+import { issueSetPasswordLink, userForSetPasswordToken, passwordOk, PASSWORD_RULE } from "../utils/passwordLink.js";
+import { setPasswordTemplate } from "../emailTemplates/setPasswordTemplate.js";
+import { clearActiveCache } from "../middlewares/isAuthentications.js";
 
 // controllers/user.controllers.js - Update register function
 
@@ -39,7 +42,8 @@ export const register = async (req, res) => {
       hashedPassword = await bcrypt.hash(String(password || generatedPassword), 10);
     }
 
-    const userData = { fullname, email, phoneNumber, password: hashedPassword, designation: designation || "", role: "employee" };
+    // A password HR typed or generated is known to someone else: the person picks their own at first login
+    const userData = { fullname, email, phoneNumber, password: hashedPassword, designation: designation || "", role: "employee", mustChangePassword: !!(password || generatedPassword) };
 
     if (req.file) {
       const fileuri = getDataUri(req.file);
@@ -115,6 +119,7 @@ export const login = async (req, res) => {
       empId: user.empId,
       teams: user.teams || [],
       isTeamLead: (user.teams || []).some((t) => t.isLead),
+      mustChangePassword: !!user.mustChangePassword,
       token,
     };
 
@@ -201,7 +206,7 @@ export const updateProfile = async (req, res) => {
 // Get all users (admin only)
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await User.find().select("-password").sort({ createdAt: -1 });
+    const users = await User.find().select("-password -setPasswordTokenHash -resetOtp").sort({ createdAt: -1 });
     res.status(200).json({ success: true, users });
   } catch (err) {
     res.status(500).json({ success: false, message: "Error fetching users" });
@@ -212,12 +217,13 @@ export const getAllUsers = async (req, res) => {
 export const updateUserByAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fullname, email, phoneNumber, role } = req.body;
+    const { fullname, email, phoneNumber, role, mustChangePassword } = req.body;
     const user = await User.findByIdAndUpdate(
       id,
-      { fullname, email, phoneNumber, role },
+      { fullname, email, phoneNumber, role, ...(mustChangePassword !== undefined && { mustChangePassword: !!mustChangePassword }) },
       { new: true }
-    ).select("-password");
+    ).select("-password -setPasswordTokenHash -resetOtp");
+    if (user && mustChangePassword !== undefined) clearActiveCache(id);
     if (!user)
       return res
         .status(404)
@@ -324,5 +330,71 @@ export const resetPassword = async (req, res) => {
     res.status(200).json({ success: true, message: "Password reset successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// GET /user/set-password/:token - whose link this is (so the page can greet them), or 400 when it no longer works
+export const checkSetPasswordLink = async (req, res) => {
+  const user = await userForSetPasswordToken(req.params.token);
+  if (!user) return res.status(400).json({ success: false, message: "This link has expired or was already used. Use \"Forgot password?\" or ask HR for a new one." });
+  res.json({ success: true, fullname: user.fullname, email: user.email });
+};
+
+// POST /user/set-password { token, password } - choose a password with a one-time link
+export const setPasswordWithLink = async (req, res) => {
+  try {
+    const { token, password } = req.body || {};
+    if (!passwordOk(password)) return res.status(400).json({ success: false, message: PASSWORD_RULE });
+    const user = await userForSetPasswordToken(token);
+    if (!user) return res.status(400).json({ success: false, message: "This link has expired or was already used. Use \"Forgot password?\" or ask HR for a new one." });
+    user.password = await bcrypt.hash(password, 10);
+    user.mustChangePassword = false;
+    user.setPasswordTokenHash = undefined;
+    user.setPasswordExpiry = undefined;
+    await user.save();
+    clearActiveCache(user._id);
+    res.json({ success: true, message: "Password set. You can log in now.", email: user.email });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Could not set the password" });
+  }
+};
+
+// POST /user/change-password { currentPassword, newPassword } - signed in; also how a forced change is done
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!passwordOk(newPassword)) return res.status(400).json({ success: false, message: PASSWORD_RULE });
+    const user = await User.findById(req.id);
+    if (!user || !(await bcrypt.compare(String(currentPassword || ""), user.password))) {
+      return res.status(400).json({ success: false, message: "Your current password is not right" });
+    }
+    if (await bcrypt.compare(newPassword, user.password)) return res.status(400).json({ success: false, message: "Choose a password different from the current one" });
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false;
+    await user.save();
+    clearActiveCache(user._id);
+    res.json({ success: true, message: "Password changed" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Could not change the password" });
+  }
+};
+
+// POST /user/admin/users/:id/password-link (admins) - email the person a fresh "set your password" link.
+// The link is also returned so HR can pass it on another way when email isn't set up.
+export const sendPasswordLink = async (req, res) => {
+  try {
+    const user = mongoose.Types.ObjectId.isValid(req.params.id) && (await User.findById(req.params.id).select("fullname email empId isActive"));
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    if (user.isActive === false) return res.status(400).json({ success: false, message: "This account is deactivated" });
+    const link = await issueSetPasswordLink(user._id);
+    let emailed = false;
+    if (emailConfigured() && user.email) {
+      await sendEmail({ to: user.email, subject: "Set your CRM password", html: setPasswordTemplate({ ...user.toObject(), ...link }) })
+        .then(() => (emailed = true))
+        .catch((err) => console.error("Set-password email failed:", err.message));
+    }
+    res.json({ success: true, emailed, link: link.url, expiresAt: link.expiresAt, message: emailed ? `Link emailed to ${user.email}` : "Email isn't available - copy the link and send it to them" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Could not create the link" });
   }
 };

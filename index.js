@@ -34,6 +34,8 @@ import hrRoute from "./routes/hr.route.js";
 import dashboardRoute from "./routes/dashboard.route.js";
 import demoRoute from "./routes/demo.route.js";
 import notificationRoute from "./routes/notification.route.js";
+import automationRoute from "./routes/automation.route.js";
+import customFieldRoute from "./routes/customField.route.js";
 import { startDailyReminders } from "./utils/notify.js";
 import { backfillLeaveDays } from "./controllers/hr.controller.js";
 import { scrubSignupPasswords } from "./controllers/goOnBoarding.controller.js";
@@ -43,6 +45,7 @@ import { startSequenceRunner } from "./utils/sequenceRunner.js";
 import { startBillingRunner } from "./utils/billingRunner.js";
 import { startExitRunner } from "./utils/exitService.js";
 import { ensureSalesTeam } from "./utils/salesAccess.js";
+import { startAutomationRunner } from "./utils/automationRunner.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -139,6 +142,8 @@ app.use("/api/v1/team", teamRoute);
 app.use("/api/v1/hr", hrRoute);
 app.use("/api/v1/dashboard", dashboardRoute);
 app.use("/api/v1/notifications", notificationRoute);
+app.use("/api/v1/automations", automationRoute);
+app.use("/api/v1/customfields", customFieldRoute);
 // Demo copies only (DEMO_MODE=true): admin can refill the sample data
 if (process.env.DEMO_MODE === "true") app.use("/api/v1/demo", demoRoute);
 /* ================= GLOBAL ERROR HANDLER ================= */
@@ -164,5 +169,6 @@ app.listen(PORT, async () => {
   if (process.env.DAILY_REMINDERS !== "false") startDailyReminders();
   startBillingRunner();
   startExitRunner();
+  startAutomationRunner();
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

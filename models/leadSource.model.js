@@ -98,6 +98,8 @@ const leadSourceSchema = new mongoose.Schema(
 
     // Activity
     activityLog: [activityLogSchema],
+    // Values of admin-defined custom fields, by field key (see CustomField)
+    custom: { type: mongoose.Schema.Types.Mixed, default: {} },
 
     // Lost reason
     lostReason: { type: String },

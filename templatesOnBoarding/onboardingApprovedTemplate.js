@@ -1,4 +1,5 @@
-export const onboardingApprovedTemplate = (candidateName, positionType, email, password, empId) => {
+// access: { url, hours } for a one-time set-password link, or { signupPassword: true } - never a password
+export const onboardingApprovedTemplate = (candidateName, positionType, email, access, empId) => {
     return `
        <div style="max-width:600px;margin:auto;background:#f8f9fc;border:1px solid #e5e5e5;border-radius:10px;padding:24px;font-family:'Segoe UI', Arial, sans-serif;">
       
@@ -17,18 +18,15 @@ export const onboardingApprovedTemplate = (candidateName, positionType, email, p
         </p>
 
         <div style="background:#f0f8ff;border-left:4px solid #28a745;padding:15px;margin:20px 0;">
-          <h3 style="margin:0 0 10px 0;color:#333;">Your Login Credentials</h3>
+          <h3 style="margin:0 0 10px 0;color:#333;">Your CRM Login</h3>
           <p style="margin:5px 0;"><strong>Employee ID:</strong> ${empId}</p>
           <p style="margin:5px 0;"><strong>Email:</strong> ${email}</p>
-          <p style="margin:5px 0;"><strong>Password:</strong> ${password}</p>
-          <p style="margin:10px 0 0 0;font-size:12px;color:#666;">
-            ⚠️ Please change your password after first login for security purposes.
-          </p>
+          ${access?.url
+            ? `<p style="margin:12px 0 6px 0;">Choose your password to log in:</p>
+          <p style="margin:0;"><a href="${access.url}" style="display:inline-block;background:#28a745;color:white;padding:10px 18px;border-radius:6px;text-decoration:none;">Set my password</a></p>
+          <p style="margin:10px 0 0 0;font-size:12px;color:#666;">The link works once and expires in ${access.hours} hours. After that, use "Forgot password?" on the login page.</p>`
+            : `<p style="margin:12px 0 0 0;">Log in with the password you chose when you signed up. Forgot it? Use "Forgot password?" on the login page.</p>`}
         </div>
-
-        <p style="font-size:15px;color:#555;line-height:1.6;">
-          You can now login to our portal using the credentials provided above.
-        </p>
 
         <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
 

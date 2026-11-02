@@ -81,6 +81,8 @@ const leadClientSchema = new mongoose.Schema(
     updatedBy: {
       type: String,
     },
+    // Values of admin-defined custom fields, by field key (see CustomField)
+    custom: { type: mongoose.Schema.Types.Mixed, default: {} },
     isDeleted: {
       type: Boolean,
       default: false,
