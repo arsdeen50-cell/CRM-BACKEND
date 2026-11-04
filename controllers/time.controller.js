@@ -152,8 +152,7 @@ export const getOptions = async (req, res) => {
   ]);
   const clients = new Map();
   for (const x of [...projects, ...retainers]) if (x.clientId) clients.set(String(x.clientId), { _id: x.clientId, brandName: x.clientName });
-  if (isAdminReq(req)) {
-    for (const c of await LeadClient.find({ isDeleted: { $ne: true } }).select("brandName").sort({ brandName: 1 }).lean()) clients.set(String(c._id), c);
-  }
+  // Everyone plans content for any company, so the picker lists every client and prospect by name (no contact details)
+  for (const c of await LeadClient.find({ isDeleted: { $ne: true } }).select("brandName").sort({ brandName: 1 }).lean()) clients.set(String(c._id), c);
   res.json({ success: true, clients: [...clients.values()].sort((a, b) => (a.brandName || "").localeCompare(b.brandName || "")), projects, retainers });
 };
