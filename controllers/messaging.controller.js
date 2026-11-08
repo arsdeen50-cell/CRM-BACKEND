@@ -97,7 +97,10 @@ export const getLeadConversation = async (req, res) => {
     const lead = await loadLead(req, req.params.id);
     if (!lead) return res.status(404).json({ success: false, message: "Lead not found" });
     const [emails, whatsapp] = await Promise.all([EmailMessage.find({ leadId: lead._id }).sort({ createdAt: 1 }).lean(), WhatsAppMessage.find({ leadId: lead._id }).sort({ createdAt: 1 }).lean()]);
-    await WhatsAppMessage.updateMany({ leadId: lead._id, direction: "in", readByTeam: false }, { $set: { readByTeam: true } });
+    await Promise.all([
+      WhatsAppMessage.updateMany({ leadId: lead._id, direction: "in", readByTeam: false }, { $set: { readByTeam: true } }),
+      EmailMessage.updateMany({ leadId: lead._id, direction: "in", readByTeam: false }, { $set: { readByTeam: true } }),
+    ]);
     const items = [
       ...emails.map((e) => ({ kind: "email", ...e })),
       ...whatsapp.map((w) => ({ kind: "whatsapp", ...w })),
@@ -118,12 +121,16 @@ export const listMessages = async (req, res) => {
       req.query.kind === "whatsapp" ? [] : EmailMessage.find(scope).sort({ createdAt: -1 }).limit(limit).lean(),
       req.query.kind === "email" ? [] : WhatsAppMessage.find(scope).sort({ createdAt: -1 }).limit(limit).lean(),
     ]);
-    const sent = emails.filter((e) => e.status === "Sent");
+    const outgoing = emails.filter((e) => e.direction !== "in");
+    const replies = emails.filter((e) => e.direction === "in");
+    const sent = outgoing.filter((e) => e.status === "Sent");
     const stats = {
       emailsSent: sent.length,
       opened: sent.filter((e) => e.openCount > 0).length,
       clicked: sent.filter((e) => e.clicks?.length).length,
-      failed: emails.length - sent.length,
+      failed: outgoing.length - sent.length,
+      emailReplies: replies.length,
+      unreadEmail: replies.filter((e) => !e.readByTeam).length,
       whatsappOut: whatsapp.filter((w) => w.direction === "out").length,
       whatsappIn: whatsapp.filter((w) => w.direction === "in").length,
       unread: whatsapp.filter((w) => w.direction === "in" && !w.readByTeam).length,

@@ -11,7 +11,16 @@ export const companyName = () => env("COMPANY_NAME", "Trends of Media");
 export const TZ_OFFSET_MIN = Number(env("CRM_TZ_OFFSET_MINUTES", "330")) || 0;
 
 export const integrations = () => ({
-  email: { configured: !!(env("EMAIL") && env("EMAIL_PASSWORD")), from: env("EMAIL") },
+  email: {
+    provider: env("MAIL_PROVIDER").toLowerCase() === "microsoft" ? "microsoft" : env("SMTP_HOST") ? "smtp" : "gmail",
+    configured:
+      env("MAIL_PROVIDER").toLowerCase() === "microsoft"
+        ? !!(env("EMAIL") && env("MS_TENANT_ID") && env("MS_CLIENT_ID") && env("MS_CLIENT_SECRET"))
+        : !!(env("EMAIL") && env("EMAIL_PASSWORD")),
+    from: env("EMAIL"),
+    // Client replies are read from this mailbox and filed on the lead (EMAIL_REPLIES_DISABLED=true turns it off)
+    replies: !on("EMAIL_REPLIES_DISABLED"),
+  },
   whatsapp: {
     configured: !!(env("WHATSAPP_TOKEN") && env("WHATSAPP_PHONE_NUMBER_ID")),
     webhookReady: !!(env("WHATSAPP_VERIFY_TOKEN") && (env("WHATSAPP_APP_SECRET") || env("META_APP_SECRET"))),
