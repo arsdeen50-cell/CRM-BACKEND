@@ -35,7 +35,9 @@ export const sendLeadEmail = async ({ lead, to, subject, body, sentBy, replyTo, 
     sequenceEnrollmentId: enrollmentId,
   });
   try {
-    const info = await sendEmail({ to, subject, html: addTracking(textToHtml(body), trackingId), text: body, replyTo, attachments });
+    // Replies go to the CRM mailbox too, so they can be filed on the lead (and to the sender, so they see them first-hand)
+    const replyAddresses = [...new Set([process.env.EMAIL, replyTo].filter(Boolean).map((a) => String(a).toLowerCase()))];
+    const info = await sendEmail({ to, subject, html: addTracking(textToHtml(body), trackingId), text: body, replyTo: replyAddresses.join(", "), attachments });
     msg.providerMessageId = info?.messageId || "";
   } catch (err) {
     msg.status = "Failed";

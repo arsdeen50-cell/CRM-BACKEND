@@ -46,6 +46,7 @@ import { startBillingRunner } from "./utils/billingRunner.js";
 import { startExitRunner } from "./utils/exitService.js";
 import { ensureSalesTeam } from "./utils/salesAccess.js";
 import { startAutomationRunner } from "./utils/automationRunner.js";
+import { startReplyReader } from "./utils/emailReplies.js";
 
 /* ================= LOAD ENV ================= */
 dotenv.config({ path: "/var/www/CRM_OWN/Backend/.env" });
@@ -170,5 +171,6 @@ app.listen(PORT, async () => {
   startBillingRunner();
   startExitRunner();
   startAutomationRunner();
+  startReplyReader();
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

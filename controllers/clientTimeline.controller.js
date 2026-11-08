@@ -36,7 +36,7 @@ export const getClientTimeline = async (req, res) => {
       Invoice.find({ clientId }).select("invoiceNo status total balance amountPaid currency issueDate dueDate payments sentAt createdAt").lean(),
       Retainer.find({ clientId }).select("name status monthlyFee currency startDate endDate createdAt").lean(),
       Project.find({ clientId }).select("projectNo name status value currency createdAt startDate dueDate").lean(),
-      EmailMessage.find({ clientId }).select("subject status sentBy source openCount firstOpenedAt createdAt").sort({ createdAt: -1 }).limit(150).lean(),
+      EmailMessage.find({ clientId }).select("direction from fromName body subject status sentBy source openCount firstOpenedAt createdAt").sort({ createdAt: -1 }).limit(150).lean(),
       WhatsAppMessage.find({ clientId }).select("direction text templateName sentBy status createdAt").sort({ createdAt: -1 }).limit(150).lean(),
       ContentItem.find({ clientId, status: "Published" }).select("title type platform scheduledDate publishedUrl updatedAt").lean(),
       TimeEntry.find({ clientId }).select("minutes billable").lean(),
@@ -67,7 +67,8 @@ export const getClientTimeline = async (req, res) => {
     }
     for (const p of projects) add(p.createdAt, "project", `Project ${p.projectNo || ""} "${clip(p.name, 60)}" created`, p.status ? `Now: ${p.status}` : "", { link: "/crm/projects" });
     for (const m of emails) {
-      add(m.createdAt, "email", `Email: ${clip(m.subject, 90)}`, [m.status, m.openCount ? `opened ${m.openCount}×` : ""].filter(Boolean).join(" · "), { by: m.sentBy });
+      if (m.direction === "in") add(m.createdAt, "email", `Email reply: ${clip(m.subject, 90)}`, clip(m.body, 200), { by: m.fromName || m.from });
+      else add(m.createdAt, "email", `Email: ${clip(m.subject, 90)}`, [m.status, m.openCount ? `opened ${m.openCount}×` : ""].filter(Boolean).join(" · "), { by: m.sentBy });
     }
     for (const w of whatsapps) add(w.createdAt, "whatsapp", w.direction === "in" ? "WhatsApp from client" : "WhatsApp sent", clip(w.text || (w.templateName ? `Template: ${w.templateName}` : ""), 200), { by: w.direction === "in" ? "" : w.sentBy });
     for (const c of content) add(c.scheduledDate || c.updatedAt, "content", `Published: ${clip(c.title, 80)}`, [c.type, c.platform].filter(Boolean).join(" · "), { url: c.publishedUrl || "" });
