@@ -10,6 +10,7 @@ import { WhatsAppMessage } from "../models/whatsappMessage.model.js";
 import { ContentItem } from "../models/contentItem.model.js";
 import { TimeEntry } from "../models/timeEntry.model.js";
 import { ClientNote } from "../models/clientNote.model.js";
+import { ClientDocument } from "../models/clientDocument.model.js";
 import { User } from "../models/user.model.js";
 import { Team } from "../models/team.model.js";
 import { notify } from "../utils/notify.js";
@@ -30,7 +31,7 @@ export const getClientTimeline = async (req, res) => {
     const client = await loadClient(req.params.id);
     if (!client) return res.status(404).json({ success: false, message: "Client not found" });
     const clientId = client._id;
-    const [leads, proposals, invoices, retainers, projects, emails, whatsapps, content, time, notes] = await Promise.all([
+    const [leads, proposals, invoices, retainers, projects, emails, whatsapps, content, time, notes, docs] = await Promise.all([
       LeadSource.find({ clientId }).select("series pipelineStage activityLog createdAt createdBy projectAccountHandledBy").lean(),
       Proposal.find({ clientId }).select("proposalNo title status total currency createdAt sentAt firstViewedAt decidedAt declineReason createdBy").lean(),
       Invoice.find({ clientId }).select("invoiceNo status total balance amountPaid currency issueDate dueDate payments sentAt createdAt").lean(),
@@ -41,6 +42,7 @@ export const getClientTimeline = async (req, res) => {
       ContentItem.find({ clientId, status: "Published" }).select("title type platform scheduledDate publishedUrl updatedAt").lean(),
       TimeEntry.find({ clientId }).select("minutes billable").lean(),
       ClientNote.find({ clientId }).sort({ createdAt: -1 }).lean(),
+      ClientDocument.find({ clientId }).select("title type fileName uploadedBy createdAt").lean(),
     ]);
 
     const events = [];
@@ -72,6 +74,7 @@ export const getClientTimeline = async (req, res) => {
     }
     for (const w of whatsapps) add(w.createdAt, "whatsapp", w.direction === "in" ? "WhatsApp from client" : "WhatsApp sent", clip(w.text || (w.templateName ? `Template: ${w.templateName}` : ""), 200), { by: w.direction === "in" ? "" : w.sentBy });
     for (const c of content) add(c.scheduledDate || c.updatedAt, "content", `Published: ${clip(c.title, 80)}`, [c.type, c.platform].filter(Boolean).join(" · "), { url: c.publishedUrl || "" });
+    for (const d of docs) add(d.createdAt, "document", `${d.type} uploaded: ${clip(d.title, 80)}`, d.fileName, { by: d.uploadedBy });
     for (const n of notes) add(n.createdAt, "note", n.authorName ? `Note by ${n.authorName}` : "Note", n.body, { noteId: String(n._id), authorId: String(n.authorId || ""), pinned: !!n.pinned });
 
     events.sort((a, b) => b.at - a.at);

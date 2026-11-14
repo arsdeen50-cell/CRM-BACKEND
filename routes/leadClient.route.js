@@ -9,6 +9,7 @@ import {
   importLeadClients,
 } from "../controllers/leadClient.controller.js";
 import { getClientTimeline, addClientNote, pinClientNote, deleteClientNote, mentionablePeople } from "../controllers/clientTimeline.controller.js";
+import { listClientDocuments, addClientDocument, downloadClientDocument, updateClientDocument, deleteClientDocument, uploadDocumentFile } from "../controllers/clientDocument.controller.js";
 import isAuthenticated from "../middlewares/isAuthentications.js";
 import { loadCurrentUser, adminOnly, requireSales } from "../utils/access.js";
 
@@ -26,6 +27,12 @@ router.get("/:id/timeline", getClientTimeline);
 router.post("/:id/notes", addClientNote);
 router.patch("/:id/notes/:noteId", pinClientNote);
 router.delete("/:id/notes/:noteId", deleteClientNote);
+// Client documents: signed agreements, NDAs, POs, briefs (stored privately on the server)
+router.get("/:id/documents", listClientDocuments);
+router.post("/:id/documents", uploadDocumentFile, addClientDocument);
+router.get("/:id/documents/:docId/file", downloadClientDocument);
+router.patch("/:id/documents/:docId", updateClientDocument);
+router.delete("/:id/documents/:docId", deleteClientDocument);
 router.get("/:id", getLeadClientById);
 router.put("/:id", updateLeadClient);
 router.delete("/:id", adminOnly, deleteLeadClient);
