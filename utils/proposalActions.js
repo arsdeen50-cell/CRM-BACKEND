@@ -6,6 +6,8 @@ import { stopSequencesForLead } from "./sequenceRunner.js";
    Sent     -> lead: proposalSent "Yes", dealValue = proposal total, stage moves up to "Proposal Sent"
    Accepted -> lead: stage "Won" (+ project and kickoff task, linked to this proposal), sequences stop
    Rejected -> recorded only; the lead stage is left for you to decide
+   A lead that is already Won (an existing client: renewal, add-on or new agreement) keeps its stage; an accepted
+   proposal adds its total to the deal value instead of replacing it, and no second project is created.
    actorReq: the request (or a {id, currentUser} stand-in for the public signing page). */
 export const applyProposalStatus = async (actorReq, proposal, status, actorName) => {
   proposal.status = status;
@@ -15,6 +17,15 @@ export const applyProposalStatus = async (actorReq, proposal, status, actorName)
 
   const lead = await LeadSource.findById(proposal.leadId?._id || proposal.leadId);
   let project = null;
+  if (lead && lead.pipelineStage === "Won") {
+    if (status === "Accepted") {
+      lead.dealValue = (Number(lead.dealValue) || 0) + (Number(proposal.total) || 0);
+      lead.stageHistory.push({ stage: "Won", changedAt: new Date(), changedBy: actorName, reason: `Proposal ${proposal.proposalNo} accepted (added to the deal)` });
+      await lead.save();
+      await stopSequencesForLead(lead._id, `Proposal ${proposal.proposalNo} accepted`);
+    }
+    return { proposal, lead, project };
+  }
   if (lead) {
     const moveTo = (stage) => {
       if (lead.pipelineStage === stage) return;
