@@ -13,7 +13,4 @@ router.post("/", c.createInfluencer);
 router.get("/:id", c.getInfluencer);
 router.put("/:id", c.updateInfluencer);
 router.delete("/:id", c.deleteInfluencer);
-router.post("/:id/collaborations", c.addCollaboration);
-router.put("/:id/collaborations/:collabId", c.updateCollaboration);
-router.delete("/:id/collaborations/:collabId", c.deleteCollaboration);
 export default router;

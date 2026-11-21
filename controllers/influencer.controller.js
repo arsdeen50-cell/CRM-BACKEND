@@ -1,10 +1,11 @@
 import mongoose from "mongoose";
-import { Influencer, INFLUENCER_PLATFORMS, INFLUENCER_STATUSES, COLLAB_STATUSES, TIERS, handleKey } from "../models/influencer.model.js";
-import { LeadClient } from "../models/leadClient.model.js";
+import { Influencer, INFLUENCER_PLATFORMS, INFLUENCER_STATUSES, TIERS, handleKey } from "../models/influencer.model.js";
+import { Campaign } from "../models/campaign.model.js";
 import { displayName, escapeRegex, isAdminReq } from "../utils/access.js";
 import { logAudit, diffFields } from "../utils/audit.js";
 
-/* Influencer database: creators, their platforms and reach, rates, contacts, and campaigns done for clients.
+/* Influencer database: creators, their platforms and reach, rates and contacts. Campaigns for clients live in
+   Campaign (controllers/campaign.controller.js); an influencer's page lists the campaigns they were part of.
    Open to admins and teams with Influencers access (see routes/influencer.route.js). */
 
 const fail = (res, err, code = 500) => res.status(err.status || code).json({ success: false, message: err.message || "Server error" });
@@ -23,7 +24,7 @@ const date = (v) => {
   return Number.isNaN(d.getTime()) ? undefined : d;
 };
 
-const cleanPlatform = (p = {}) => ({
+export const cleanPlatform = (p = {}) => ({
   platform: pick(p.platform, INFLUENCER_PLATFORMS, "Other"),
   handle: str(p.handle, 100).replace(/^@+/, ""),
   url: /^https?:\/\//i.test(str(p.url, 500)) ? str(p.url, 500) : "",
@@ -32,7 +33,7 @@ const cleanPlatform = (p = {}) => ({
   engagementRate: Math.min(100, Math.round(num(p.engagementRate) * 100) / 100),
 });
 
-// Body -> safe influencer fields (collaborations are edited through their own endpoints)
+// Body -> safe influencer fields
 const fields = (b = {}) => {
   const out = {};
   const set = (k, v) => b[k] !== undefined && (out[k] = v);
@@ -53,7 +54,7 @@ const fields = (b = {}) => {
 };
 
 // Another live influencer already using one of these handles, email or phone?
-const findDuplicate = async ({ platforms = [], email = "", phone = "" }, exceptId) => {
+export const findDuplicate = async ({ platforms = [], email = "", phone = "" }, exceptId) => {
   const or = [];
   const keys = platforms.map(handleKey).filter(Boolean);
   if (keys.length) or.push({ handles: { $in: keys } });
@@ -68,7 +69,7 @@ const filterFrom = (q = {}) => {
   const f = { isDeleted: { $ne: true } };
   if (q.q) {
     const rx = new RegExp(escapeRegex(str(q.q, 100)), "i");
-    f.$or = [{ name: rx }, { "platforms.handle": rx }, { niches: rx }, { city: rx }, { tags: rx }, { email: rx }, { managerName: rx }, { "collaborations.clientName": rx }, { "collaborations.campaign": rx }];
+    f.$or = [{ name: rx }, { "platforms.handle": rx }, { niches: rx }, { city: rx }, { tags: rx }, { email: rx }, { managerName: rx }];
   }
   if (q.platform) f["platforms.platform"] = q.platform;
   if (q.niche) f.niches = new RegExp(`^${escapeRegex(q.niche)}$`, "i");
@@ -78,7 +79,6 @@ const filterFrom = (q = {}) => {
   if (q.status) f.status = q.status;
   if (q.owner) f.owner = q.owner;
   if (q.barter === "true") f.openToBarter = true;
-  if (q.clientId && validId(q.clientId)) f["collaborations.clientId"] = new mongoose.Types.ObjectId(q.clientId);
   const min = num(q.minFollowers);
   const max = num(q.maxFollowers);
   if (min || max) f.followers = { ...(min && { $gte: min }), ...(max && { $lte: max }) };
@@ -90,11 +90,15 @@ const SORTS = { followers: { followers: -1 }, name: { name: 1 }, recent: { updat
 export const listInfluencers = async (req, res) => {
   try {
     const filter = filterFrom(req.query);
+    if (req.query.clientId && validId(req.query.clientId)) {
+      const ids = await Campaign.distinct("entries.influencerId", { clientId: req.query.clientId, isDeleted: { $ne: true } });
+      filter._id = { $in: ids };
+    }
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
     const page = Math.max(1, Number(req.query.page) || 1);
     const [rows, total, facets] = await Promise.all([
       Influencer.find(filter)
-        .select("-collaborations.links -notes")
+        .select("-notes")
         .sort(SORTS[req.query.sort] || SORTS.followers)
         .skip((page - 1) * limit)
         .limit(limit)
@@ -116,13 +120,21 @@ export const listInfluencers = async (req, res) => {
       ]),
     ]);
     const fc = facets[0] || {};
+    // Campaigns each listed influencer was part of (not dropped)
+    const usage = rows.length
+      ? await Campaign.aggregate([
+          { $match: { isDeleted: { $ne: true }, "entries.influencerId": { $in: rows.map((r) => r._id) } } },
+          { $unwind: "$entries" },
+          { $match: { "entries.influencerId": { $in: rows.map((r) => r._id) }, "entries.status": { $ne: "Dropped" } } },
+          { $group: { _id: "$entries.influencerId", n: { $sum: 1 }, clients: { $addToSet: "$clientName" }, last: { $max: { $ifNull: ["$entries.postDate", "$startDate"] } } } },
+        ])
+      : [];
+    const used = new Map(usage.map((u) => [String(u._id), u]));
     res.json({
       success: true,
       influencers: rows.map((r) => {
-        const collabs = r.collaborations || [];
-        const done = collabs.filter((c) => c.status === "Completed");
-        const { collaborations, ...rest } = r;
-        return { ...rest, collabCount: collabs.length, lastCollab: collabs.map((c) => c.date).filter(Boolean).sort((a, b) => b - a)[0] || null, clients: [...new Set(done.map((c) => c.clientName).filter(Boolean))].slice(0, 5) };
+        const u = used.get(String(r._id));
+        return { ...r, collabCount: u?.n || 0, lastCollab: u?.last || null, clients: (u?.clients || []).filter(Boolean).slice(0, 5) };
       }),
       total,
       page,
@@ -130,7 +142,6 @@ export const listInfluencers = async (req, res) => {
       options: {
         platforms: INFLUENCER_PLATFORMS,
         statuses: INFLUENCER_STATUSES,
-        collabStatuses: COLLAB_STATUSES,
         tiers: TIERS,
         niches: (fc.niches || []).map((x) => x._id),
         cities: (fc.cities || []).map((x) => x._id),
@@ -154,7 +165,15 @@ export const getInfluencer = async (req, res) => {
   try {
     const inf = await load(req.params.id);
     if (!inf) return res.status(404).json({ success: false, message: "Influencer not found" });
-    res.json({ success: true, influencer: inf });
+    const campaigns = await Campaign.find({ isDeleted: { $ne: true }, "entries.influencerId": inf._id }).select("name clientId clientName status startDate endDate entries").sort({ startDate: -1, createdAt: -1 }).lean();
+    res.json({
+      success: true,
+      influencer: inf,
+      campaigns: campaigns.map((c) => {
+        const e = c.entries.find((x) => String(x.influencerId) === String(inf._id));
+        return { _id: c._id, name: c.name, clientId: c.clientId, clientName: c.clientName, status: c.status, startDate: c.startDate, endDate: c.endDate, entry: { status: e.status, deliverables: e.deliverables, fee: e.fee, barter: e.barter, postDate: e.postDate, links: e.links, metrics: e.metrics, platform: e.platform } };
+      }),
+    });
   } catch (err) {
     fail(res, err);
   }
@@ -214,83 +233,6 @@ export const deleteInfluencer = async (req, res) => {
   }
 };
 
-/* ---------- Campaigns with clients ---------- */
-const collabFields = async (b = {}) => {
-  const out = {
-    campaign: str(b.campaign, 150),
-    deliverables: str(b.deliverables, 500),
-    fee: num(b.fee),
-    barter: !!b.barter,
-    date: date(b.date),
-    status: pick(b.status, COLLAB_STATUSES, "Planned"),
-    links: (Array.isArray(b.links) ? b.links : String(b.links || "").split(/\s+|,/)).map((l) => str(l, 500)).filter((l) => /^https?:\/\//i.test(l)).slice(0, 20),
-    results: str(b.results, 1000),
-    rating: Math.min(5, Math.round(num(b.rating))),
-  };
-  if (b.clientId && validId(b.clientId)) {
-    const c = await LeadClient.findOne({ _id: b.clientId, isDeleted: { $ne: true } }).select("brandName").lean();
-    if (!c) throw Object.assign(new Error("Client not found"), { status: 400 });
-    out.clientId = c._id;
-    out.clientName = c.brandName;
-  } else {
-    out.clientId = undefined;
-    out.clientName = str(b.clientName, 150);
-  }
-  return out;
-};
-
-// After a completed campaign the influencer has been worked with
-const bumpStatus = (inf) => {
-  if (inf.collaborations.some((c) => c.status === "Completed") && ["Prospect", "Contacted", "In talks"].includes(inf.status)) inf.status = "Worked with";
-};
-
-export const addCollaboration = async (req, res) => {
-  try {
-    const inf = await load(req.params.id);
-    if (!inf) return res.status(404).json({ success: false, message: "Influencer not found" });
-    const c = await collabFields(req.body);
-    if (!c.campaign && !c.clientName) return res.status(400).json({ success: false, message: "Enter the client or campaign" });
-    inf.collaborations.push({ ...c, addedBy: displayName(req) });
-    bumpStatus(inf);
-    inf.updatedBy = displayName(req);
-    await inf.save();
-    audit(req, inf, "update", `Campaign added: ${c.campaign || c.clientName}`);
-    res.status(201).json({ success: true, influencer: inf });
-  } catch (err) {
-    fail(res, err, 400);
-  }
-};
-
-export const updateCollaboration = async (req, res) => {
-  try {
-    const inf = await load(req.params.id);
-    const c = inf?.collaborations.id(req.params.collabId);
-    if (!c) return res.status(404).json({ success: false, message: "Campaign not found" });
-    Object.assign(c, await collabFields(req.body));
-    bumpStatus(inf);
-    inf.updatedBy = displayName(req);
-    await inf.save();
-    res.json({ success: true, influencer: inf });
-  } catch (err) {
-    fail(res, err, 400);
-  }
-};
-
-export const deleteCollaboration = async (req, res) => {
-  try {
-    const inf = await load(req.params.id);
-    const c = inf?.collaborations.id(req.params.collabId);
-    if (!c) return res.status(404).json({ success: false, message: "Campaign not found" });
-    c.deleteOne();
-    inf.updatedBy = displayName(req);
-    await inf.save();
-    audit(req, inf, "update", "Campaign removed");
-    res.json({ success: true, influencer: inf });
-  } catch (err) {
-    fail(res, err);
-  }
-};
-
 /* ---------- Import / export ---------- */
 /* POST /influencer/import { rows: [{ name, instagram, instagramFollowers, youtube, youtubeSubscribers, ... }] }
    Rows come from the CSV template (parsed in the browser). Duplicates (same handle, email or phone) are skipped. */
@@ -302,7 +244,7 @@ const PLATFORM_COLUMNS = [
   ["LinkedIn", "linkedin", "linkedinFollowers", "", ""],
 ];
 const RATE_COLUMNS = [["Instagram reel", "rateReel"], ["Instagram post", "ratePost"], ["Instagram story", "rateStory"], ["YouTube video", "rateYoutube"]];
-const fromUrl = (v) => {
+export const fromUrl = (v) => {
   const s = str(v, 500);
   if (!/^https?:\/\//i.test(s)) return { handle: s, url: "" };
   const m = s.match(/^https?:\/\/[^/]+\/(?:@)?([^/?#]+)/i);
@@ -368,7 +310,7 @@ export const exportInfluencers = async (req, res) => {
   try {
     if (!isAdminReq(req)) return res.status(403).json({ success: false, message: "Only admins can export the influencer list" });
     const rows = await Influencer.find(filterFrom(req.query)).sort({ followers: -1 }).lean();
-    const cols = ["name", ...PLATFORM_COLUMNS.flatMap(([, h, f, er, v]) => [h, f, er, v].filter(Boolean)), "niches", "languages", "city", "state", "country", "gender", "email", "phone", "managerName", "managerPhone", "managerEmail", ...RATE_COLUMNS.map(([, k]) => k), "openToBarter", "status", "owner", "tags", "tier", "campaigns", "notes"];
+    const cols = ["name", ...PLATFORM_COLUMNS.flatMap(([, h, f, er, v]) => [h, f, er, v].filter(Boolean)), "niches", "languages", "city", "state", "country", "gender", "email", "phone", "managerName", "managerPhone", "managerEmail", ...RATE_COLUMNS.map(([, k]) => k), "openToBarter", "status", "owner", "tags", "tier", "notes"];
     const csv = (v) => {
       let s = String(v ?? "");
       if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // keep spreadsheet formulas from running
@@ -376,7 +318,7 @@ export const exportInfluencers = async (req, res) => {
     };
     const lines = [cols.join(",")];
     for (const r of rows) {
-      const o = { ...r, niches: (r.niches || []).join(", "), languages: (r.languages || []).join(", "), tags: (r.tags || []).join(", "), openToBarter: r.openToBarter ? "Yes" : "No", campaigns: (r.collaborations || []).length };
+      const o = { ...r, niches: (r.niches || []).join(", "), languages: (r.languages || []).join(", "), tags: (r.tags || []).join(", "), openToBarter: r.openToBarter ? "Yes" : "No" };
       for (const [platform, h, f, er, v] of PLATFORM_COLUMNS) {
         const p = (r.platforms || []).find((x) => x.platform === platform);
         if (!p) continue;

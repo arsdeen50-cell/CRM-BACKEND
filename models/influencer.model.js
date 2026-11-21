@@ -4,7 +4,6 @@ import mongoose from "mongoose";
    charge, how to reach them, and every campaign they've done for our clients. */
 export const INFLUENCER_PLATFORMS = ["Instagram", "YouTube", "Facebook", "X", "LinkedIn", "Snapchat", "Moj / Josh", "ShareChat", "Threads", "Blog", "Other"];
 export const INFLUENCER_STATUSES = ["Prospect", "Contacted", "In talks", "Worked with", "Not interested", "Do not use"];
-export const COLLAB_STATUSES = ["Planned", "Confirmed", "Live", "Completed", "Cancelled"];
 export const TIERS = [
   { name: "Nano", min: 0 },
   { name: "Micro", min: 10000 },
@@ -39,24 +38,6 @@ const rateSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const collabSchema = new mongoose.Schema(
-  {
-    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "LeadClient" },
-    clientName: { type: String, trim: true, default: "" },
-    campaign: { type: String, trim: true, default: "" },
-    deliverables: { type: String, trim: true, default: "" },
-    fee: { type: Number, min: 0, default: 0 },
-    barter: { type: Boolean, default: false },
-    date: Date,
-    status: { type: String, enum: COLLAB_STATUSES, default: "Planned" },
-    links: { type: [String], default: [] },
-    results: { type: String, trim: true, default: "" }, // reach, views, sales... as reported
-    rating: { type: Number, min: 0, max: 5, default: 0 },
-    addedBy: { type: String, default: "" },
-  },
-  { timestamps: true }
-);
-
 const influencerSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 150 },
@@ -89,8 +70,6 @@ const influencerSchema = new mongoose.Schema(
     tier: { type: String, default: "" },
     handles: { type: [String], default: [], index: true }, // lowercased "instagram:@name" for duplicate checks
 
-    collaborations: { type: [collabSchema], default: [] },
-
     createdBy: { type: String, default: "" },
     updatedBy: { type: String, default: "" },
     isDeleted: { type: Boolean, default: false, index: true },
@@ -117,6 +96,5 @@ influencerSchema.pre("save", function (next) {
   next();
 });
 
-influencerSchema.index({ "collaborations.clientId": 1 });
 
 export const Influencer = mongoose.model("Influencer", influencerSchema);
