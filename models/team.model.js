@@ -12,6 +12,7 @@ const teamSchema = new mongoose.Schema(
     access: {
       sales: { type: Boolean, default: false }, // leads, clients, follow-ups, proposals, templates, targets
       outreach: { type: Boolean, default: false }, // messages (email / WhatsApp from the CRM), sequences
+      influencers: { type: Boolean, default: false }, // the influencer database and campaign history
     },
     createdBy: { type: String, default: "" },
   },

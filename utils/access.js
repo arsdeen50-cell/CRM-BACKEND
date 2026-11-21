@@ -30,6 +30,7 @@ export const loadCurrentUser = async (req, res, next) => {
       const teamDocs = teamIds.length ? await Team.find({ _id: { $in: teamIds }, isActive: true }).select("access").lean() : [];
       user.canSales = user.role === "admin" || teamDocs.some((t) => t.access?.sales);
       user.canOutreach = user.role === "admin" || teamDocs.some((t) => t.access?.outreach);
+      user.canInfluencers = user.role === "admin" || teamDocs.some((t) => t.access?.influencers);
       user.teamMemberNames = ledTeams.length
         ? (await User.find({ "teams.team": { $in: ledTeams.map((t) => t.team) } }).select("fullname").lean()).map((u) => u.fullname).filter(Boolean)
         : [];
@@ -53,6 +54,12 @@ export const requireSales = (req, res, next) => {
 export const requireOutreach = (req, res, next) => {
   if (isAdminReq(req) || req.currentUser?.canOutreach) return next();
   return res.status(403).json({ success: false, message: "Outreach automation is limited to admins and the sales team." });
+};
+
+// Influencer database: admins + teams with Influencers access
+export const requireInfluencers = (req, res, next) => {
+  if (isAdminReq(req) || req.currentUser?.canInfluencers) return next();
+  return res.status(403).json({ success: false, message: "Influencers are limited to admins and teams with Influencers access." });
 };
 
 export const adminOnly = (req, res, next) => {

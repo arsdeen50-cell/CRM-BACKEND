@@ -1,6 +1,7 @@
 import express from "express";
 import { rateLimit } from "../utils/rateLimit.js";
 import * as pub from "../controllers/public.controller.js";
+import { viewPublicCampaign } from "../controllers/campaign.controller.js";
 
 // No login: links clients open, tracking pixels and webhooks from Meta / Razorpay.
 const router = express.Router();
@@ -25,6 +26,8 @@ router.post("/proposal/:token/accept", tight, pub.acceptPublicProposal);
 router.post("/proposal/:token/decline", tight, pub.declinePublicProposal);
 
 router.get("/invoice/:token", normal, pub.viewPublicInvoice);
+
+router.get("/campaign/:token", normal, viewPublicCampaign);
 router.get("/invoice/:token/pdf", normal, pub.publicInvoicePdf);
 
 export default router;
